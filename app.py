@@ -61,7 +61,11 @@ if vista == "Director de carrera":
             "Maestría en Psicoterapia Psicoanalítica",
             "Maestría en Administración de Recursos Humanos",
             "Maestría en Finanzas",
+            "Maestría: Tecnología e Innovación Educativa",
             "Maestría en Educación Especial",
+             "Maestría: Entrenamiento Deportivo",
+            "Licenciatura Entrenamiento Deportivo",
+            
         ],
     )
 
