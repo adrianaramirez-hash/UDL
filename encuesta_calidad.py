@@ -42,12 +42,10 @@ def _to_datetime_safe(s):
 
 @st.cache_data(show_spinner=False)
 def _load_from_gsheets(sheet_id: str):
-    # Auth desde secrets
     sa = dict(st.secrets["gcp_service_account"])
     gc = gspread.service_account_from_dict(sa)
     sh = gc.open_by_key(sheet_id)
 
-    # Normalizador para comparar títulos de pestañas
     def norm(x: str) -> str:
         return str(x).strip().lower().replace(" ", "").replace("_", "")
 
@@ -58,8 +56,7 @@ def _load_from_gsheets(sheet_id: str):
     }
     targets_norm = {k: norm(v) for k, v in targets.items()}
 
-    all_ws = sh.worksheets()
-    titles = [ws.title for ws in all_ws]
+    titles = [ws.title for ws in sh.worksheets()]
     titles_norm = {norm(t): t for t in titles}
 
     missing = []
@@ -83,10 +80,6 @@ def _load_from_gsheets(sheet_id: str):
     ws_cat = sh.worksheet(resolved["Catalogo_Servicio"])
 
     def make_unique_headers(raw_headers):
-        """
-        Google Forms suele repetir encabezados como '¿Por qué?'.
-        Esta función vuelve únicos los headers agregando contexto.
-        """
         seen_base = {}
         used_final = set()
         out = []
@@ -97,11 +90,9 @@ def _load_from_gsheets(sheet_id: str):
             if base == "":
                 base = "SIN_TITULO"
 
-            # Conteo por base (para detectar duplicados)
             seen_base[base] = seen_base.get(base, 0) + 1
             is_dup = seen_base[base] > 1
 
-            # Regla especial para "¿Por qué?"
             if base.lower().startswith("¿por qué") and (is_dup or base in used_final):
                 candidate = f"{base} — {prev_nonempty}" if prev_nonempty else base
             elif is_dup or base in used_final:
@@ -109,14 +100,12 @@ def _load_from_gsheets(sheet_id: str):
             else:
                 candidate = base
 
-            # Asegurar unicidad final (por si se repite el candidate)
             while candidate in used_final:
                 candidate = f"{candidate}*"
 
             out.append(candidate)
             used_final.add(candidate)
 
-            # Actualiza contexto
             if base != "SIN_TITULO":
                 prev_nonempty = base
 
@@ -126,24 +115,18 @@ def _load_from_gsheets(sheet_id: str):
         values = ws.get_all_values()
         if not values:
             return pd.DataFrame()
-
-        raw_headers = values[0]
-        headers = make_unique_headers(raw_headers)
-
+        headers = make_unique_headers(values[0])
         rows = values[1:]
-        df_local = pd.DataFrame(rows, columns=headers)
-        df_local = df_local.replace("", pd.NA)
+        df_local = pd.DataFrame(rows, columns=headers).replace("", pd.NA)
         return df_local
 
     df = ws_to_df(ws_resp)
     mapa = ws_to_df(ws_map)
     catalogo = ws_to_df(ws_cat)
-
     return df, mapa, catalogo
 
 
 def _merge_catalogo(df: pd.DataFrame, catalogo: pd.DataFrame) -> pd.DataFrame:
-    # Espera columnas: programa, servicio, carrera (carrera opcional)
     cat = catalogo.copy()
     cat.columns = [c.strip().lower() for c in cat.columns]
 
@@ -176,6 +159,10 @@ def _merge_catalogo(df: pd.DataFrame, catalogo: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _mean_numeric(series: pd.Series):
+    return pd.to_numeric(series, errors="coerce").mean()
+
+
 def render_encuesta_calidad(vista: str, carrera: str | None):
     st.subheader("Encuesta de calidad")
 
@@ -189,11 +176,9 @@ def render_encuesta_calidad(vista: str, carrera: str | None):
 
     df = _merge_catalogo(df, catalogo)
 
-    # Fecha
     if "Marca temporal" in df.columns:
         df["Marca temporal"] = _to_datetime_safe(df["Marca temporal"])
 
-    # Validación mínima del mapa
     required_cols = {"header_exacto", "scale_code", "header_num"}
     if not required_cols.issubset(set(mapa.columns)):
         st.error("La hoja 'Mapa_Preguntas' no trae: header_exacto, scale_code, header_num.")
@@ -210,7 +195,7 @@ def render_encuesta_calidad(vista: str, carrera: str | None):
     yesno_cols = [c for c in num_cols if _is_yesno_col(c)]
 
     # ---------------------------
-    # Filtros (sin duplicar carrera)
+    # Filtros (limpios: sin Programa; Carrera solo en Dirección General)
     # ---------------------------
     with st.sidebar:
         st.markdown("### Filtros – Encuesta de calidad")
@@ -221,13 +206,7 @@ def render_encuesta_calidad(vista: str, carrera: str | None):
         else:
             servicio_sel = "(Todos)"
 
-        key_prog = "Selecciona el programa académico que estudias"
-        if vista == "Dirección General" and key_prog in df.columns:
-            programas = ["(Todos)"] + sorted(df[key_prog].dropna().unique().tolist())
-            prog_sel = st.selectbox("Programa", programas, index=0)
-        else:
-            prog_sel = "(Todos)"
-
+        # Carrera: solo en Dirección General (drill-down). En Director de carrera se aplica automático.
         if vista == "Dirección General" and "Carrera_Catalogo" in df.columns:
             carreras = ["(Todas)"] + sorted(df["Carrera_Catalogo"].dropna().unique().tolist())
             carrera_sel = st.selectbox("Carrera", carreras, index=0)
@@ -242,13 +221,11 @@ def render_encuesta_calidad(vista: str, carrera: str | None):
             dr = None
 
     f = df.copy()
+
     if servicio_sel != "(Todos)" and "Servicio" in f.columns:
         f = f[f["Servicio"] == servicio_sel]
 
-    if prog_sel != "(Todos)" and key_prog in f.columns:
-        f = f[f[key_prog] == prog_sel]
-
-    # Carrera automática en vista Director de carrera (bloqueada)
+    # Carrera automática (sin avisos visibles)
     if vista == "Director de carrera" and carrera and "Carrera_Catalogo" in f.columns:
         f = f[f["Carrera_Catalogo"] == carrera]
 
@@ -259,15 +236,12 @@ def render_encuesta_calidad(vista: str, carrera: str | None):
     if dr and "Marca temporal" in f.columns and len(dr) == 2:
         f = f[(f["Marca temporal"].dt.date >= dr[0]) & (f["Marca temporal"].dt.date <= dr[1])]
 
-    if vista == "Director de carrera" and carrera:
-        st.info(f"Vista Director de carrera: mostrando únicamente **{carrera}** (bloqueado desde la selección superior).")
-
     st.caption(f"Registros filtrados: **{len(f)}**")
 
-    tab1, tab2, tab3 = st.tabs(["Resumen", "Por pregunta", "Comentarios"])
+    tab1, tab2, tab3 = st.tabs(["Resumen", "Por sección", "Comentarios"])
 
     # ---------------------------
-    # Resumen
+    # Resumen (global + promedios por sección)
     # ---------------------------
     with tab1:
         c1, c2, c3 = st.columns(3)
@@ -285,86 +259,113 @@ def render_encuesta_calidad(vista: str, carrera: str | None):
         else:
             c3.metric("% Sí (preguntas Sí/No)", "—")
 
+        st.divider()
         st.markdown("### Promedio por sección (Likert 1–5)")
+
         rows = []
-        for (_, sec_name), g in mapa_ok.groupby(["section_code", "section_name"]):
+        for (sec_code, sec_name), g in mapa_ok.groupby(["section_code", "section_name"]):
             cols = [c for c in g["header_num"].tolist() if c in f.columns and c in likert_cols]
             if not cols:
                 continue
             val = pd.to_numeric(f[cols].stack(), errors="coerce").mean()
-            rows.append({"Sección": sec_name, "Promedio": val, "Preguntas": len(cols)})
+            rows.append({"Sección": sec_name, "Promedio": val, "Preguntas": len(cols), "sec_code": sec_code})
 
         sec_df = pd.DataFrame(rows).sort_values("Promedio", ascending=False)
-        st.dataframe(sec_df, use_container_width=True)
-
-        if not sec_df.empty:
-            st.altair_chart(
-                alt.Chart(sec_df).mark_bar().encode(
-                    x=alt.X("Sección:N", sort="-y"),
-                    y=alt.Y("Promedio:Q"),
-                ),
-                use_container_width=True,
-            )
-
-        st.markdown("### Promedio por pregunta")
-        qrows = []
-        for _, m in mapa_ok.iterrows():
-            col = m["header_num"]
-            if col not in f.columns:
-                continue
-            mean_val = pd.to_numeric(f[col], errors="coerce").mean()
-            if pd.isna(mean_val):
-                continue
-            qrows.append({
-                "Sección": m["section_name"],
-                "Pregunta": m["header_exacto"],
-                "Promedio": mean_val,
-                "Tipo": "Sí/No" if _is_yesno_col(col) else "Likert",
-                "% Sí": (mean_val * 100) if _is_yesno_col(col) else None,
-            })
-
-        qdf = pd.DataFrame(qrows)
-        if not qdf.empty:
-            qdf = qdf.sort_values(["Sección", "Promedio"], ascending=[True, False])
-            st.dataframe(qdf, use_container_width=True)
-        else:
-            st.info("No hay promedios por pregunta disponibles con los filtros actuales.")
-
-    # ---------------------------
-    # Por pregunta
-    # ---------------------------
-    with tab2:
-        if mapa_ok.empty:
-            st.info("No hay mapeo de preguntas disponible.")
+        if sec_df.empty:
+            st.info("No hay datos suficientes para calcular promedios por sección con los filtros actuales.")
             return
 
-        pregunta = st.selectbox("Selecciona una pregunta", mapa_ok["header_exacto"].tolist())
-        row = mapa_ok[mapa_ok["header_exacto"] == pregunta].iloc[0]
-        num_col = row["header_num"]
+        st.dataframe(sec_df.drop(columns=["sec_code"]), use_container_width=True)
 
-        c1, c2 = st.columns(2)
-        mean_val = pd.to_numeric(f[num_col], errors="coerce").mean() if num_col in f.columns else None
-        c1.metric("Promedio", f"{mean_val:.2f}" if pd.notna(mean_val) else "—")
-        if _is_yesno_col(num_col) and pd.notna(mean_val):
-            c2.metric("% Sí", f"{(mean_val * 100):.1f}%")
-        else:
-            c2.metric("Sección", row["section_name"])
+        st.altair_chart(
+            alt.Chart(sec_df).mark_bar().encode(
+                x=alt.X("Sección:N", sort="-y"),
+                y=alt.Y("Promedio:Q"),
+                tooltip=["Sección", alt.Tooltip("Promedio:Q", format=".2f"), "Preguntas"],
+            ),
+            use_container_width=True,
+        )
 
-        if pregunta in f.columns:
-            dist = f[pregunta].astype(str).replace("nan", pd.NA).dropna().value_counts().reset_index()
-            dist.columns = ["Respuesta", "Conteo"]
-            st.dataframe(dist, use_container_width=True)
-        else:
-            st.warning("No encuentro la columna de texto original para esa pregunta (header_exacto).")
+    # ---------------------------
+    # Por sección (desglose: promedio de sección + preguntas y promedios)
+    # ---------------------------
+    with tab2:
+        st.markdown("### Desglose por sección")
+
+        # Reusa sec_df si existe (se calcula en tab1); si no, lo recalculamos aquí por seguridad.
+        if "sec_df" not in locals() or sec_df.empty:
+            rows = []
+            for (sec_code, sec_name), g in mapa_ok.groupby(["section_code", "section_name"]):
+                cols = [c for c in g["header_num"].tolist() if c in f.columns and c in likert_cols]
+                if not cols:
+                    continue
+                val = pd.to_numeric(f[cols].stack(), errors="coerce").mean()
+                rows.append({"Sección": sec_name, "Promedio": val, "Preguntas": len(cols), "sec_code": sec_code})
+            sec_df = pd.DataFrame(rows).sort_values("Promedio", ascending=False)
+
+        for _, r in sec_df.iterrows():
+            sec_code = r["sec_code"]
+            sec_name = r["Sección"]
+            sec_avg = r["Promedio"]
+
+            with st.expander(f"{sec_name} — Promedio: {sec_avg:.2f}", expanded=False):
+                # Preguntas de la sección (incluye Likert y Sí/No)
+                mm = mapa_ok[mapa_ok["section_code"] == sec_code].copy()
+                qrows = []
+                for _, m in mm.iterrows():
+                    col = m["header_num"]
+                    if col not in f.columns:
+                        continue
+                    mean_val = _mean_numeric(f[col])
+                    if pd.isna(mean_val):
+                        continue
+
+                    qrows.append(
+                        {
+                            "Pregunta": m["header_exacto"],
+                            "Promedio": mean_val if not _is_yesno_col(col) else None,
+                            "% Sí": (mean_val * 100) if _is_yesno_col(col) else None,
+                            "Tipo": "Sí/No" if _is_yesno_col(col) else "Likert",
+                        }
+                    )
+
+                qdf = pd.DataFrame(qrows)
+                if qdf.empty:
+                    st.info("Sin datos para esta sección con los filtros actuales.")
+                    continue
+
+                # Orden: Likert por Promedio, Sí/No por %Sí
+                qdf_l = qdf[qdf["Tipo"] == "Likert"].sort_values("Promedio", ascending=False)
+                qdf_y = qdf[qdf["Tipo"] == "Sí/No"].sort_values("% Sí", ascending=False)
+
+                if not qdf_l.empty:
+                    st.markdown("**Preguntas Likert (1–5)**")
+                    st.dataframe(
+                        qdf_l[["Pregunta", "Promedio"]].reset_index(drop=True),
+                        use_container_width=True,
+                    )
+
+                if not qdf_y.empty:
+                    st.markdown("**Preguntas Sí/No**")
+                    st.dataframe(
+                        qdf_y[["Pregunta", "% Sí"]].reset_index(drop=True),
+                        use_container_width=True,
+                    )
 
     # ---------------------------
     # Comentarios
     # ---------------------------
     with tab3:
         st.markdown("### Comentarios y respuestas abiertas")
+
         open_cols = [
-            c for c in f.columns
-            if (not c.endswith("_num")) and any(k in c.lower() for k in ["¿por qué", "comentario", "sugerencia", "escríbelo", "escribelo"])
+            c
+            for c in f.columns
+            if (not c.endswith("_num"))
+            and any(
+                k in c.lower()
+                for k in ["¿por qué", "comentario", "sugerencia", "escríbelo", "escribelo"]
+            )
         ]
 
         if not open_cols:
