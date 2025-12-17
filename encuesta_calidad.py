@@ -45,7 +45,6 @@ def _load_from_gsheets(sheet_id: str):
     # Auth desde secrets
     sa = dict(st.secrets["gcp_service_account"])
     gc = gspread.service_account_from_dict(sa)
-
     sh = gc.open_by_key(sheet_id)
 
     # Normalizador para comparar títulos de pestañas
@@ -83,9 +82,62 @@ def _load_from_gsheets(sheet_id: str):
     ws_map = sh.worksheet(resolved["Mapa_Preguntas"])
     ws_cat = sh.worksheet(resolved["Catalogo_Servicio"])
 
-    df = pd.DataFrame(ws_resp.get_all_records())
-    mapa = pd.DataFrame(ws_map.get_all_records())
-    catalogo = pd.DataFrame(ws_cat.get_all_records())
+    def make_unique_headers(raw_headers):
+        """
+        Google Forms suele repetir encabezados como '¿Por qué?'.
+        Esta función vuelve únicos los headers agregando contexto.
+        """
+        seen_base = {}
+        used_final = set()
+        out = []
+        prev_nonempty = ""
+
+        for h in raw_headers:
+            base = (h or "").strip()
+            if base == "":
+                base = "SIN_TITULO"
+
+            # Conteo por base (para detectar duplicados)
+            seen_base[base] = seen_base.get(base, 0) + 1
+            is_dup = seen_base[base] > 1
+
+            # Regla especial para "¿Por qué?"
+            if base.lower().startswith("¿por qué") and (is_dup or base in used_final):
+                candidate = f"{base} — {prev_nonempty}" if prev_nonempty else base
+            elif is_dup or base in used_final:
+                candidate = f"{base} ({seen_base[base]})"
+            else:
+                candidate = base
+
+            # Asegurar unicidad final (por si se repite el candidate)
+            while candidate in used_final:
+                candidate = f"{candidate}*"
+
+            out.append(candidate)
+            used_final.add(candidate)
+
+            # Actualiza contexto
+            if base != "SIN_TITULO":
+                prev_nonempty = base
+
+        return out
+
+    def ws_to_df(ws):
+        values = ws.get_all_values()
+        if not values:
+            return pd.DataFrame()
+
+        raw_headers = values[0]
+        headers = make_unique_headers(raw_headers)
+
+        rows = values[1:]
+        df_local = pd.DataFrame(rows, columns=headers)
+        df_local = df_local.replace("", pd.NA)
+        return df_local
+
+    df = ws_to_df(ws_resp)
+    mapa = ws_to_df(ws_map)
+    catalogo = ws_to_df(ws_cat)
 
     return df, mapa, catalogo
 
@@ -196,9 +248,11 @@ def render_encuesta_calidad(vista: str, carrera: str | None):
     if prog_sel != "(Todos)" and key_prog in f.columns:
         f = f[f[key_prog] == prog_sel]
 
+    # Carrera automática en vista Director de carrera (bloqueada)
     if vista == "Director de carrera" and carrera and "Carrera_Catalogo" in f.columns:
         f = f[f["Carrera_Catalogo"] == carrera]
 
+    # Carrera opcional en Dirección General
     if vista == "Dirección General" and carrera_sel != "(Todas)" and "Carrera_Catalogo" in f.columns:
         f = f[f["Carrera_Catalogo"] == carrera_sel]
 
