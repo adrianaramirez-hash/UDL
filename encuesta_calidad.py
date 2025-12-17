@@ -2,6 +2,7 @@ import pandas as pd
 import streamlit as st
 import altair as alt
 import gspread
+import textwrap
 
 
 # ---------------------------
@@ -38,6 +39,30 @@ def _is_yesno_col(col: str) -> bool:
 
 def _to_datetime_safe(s):
     return pd.to_datetime(s, errors="coerce", dayfirst=True)
+
+
+def _wrap_text(s: str, width: int = 18, max_lines: int = 3) -> str:
+    """
+    Devuelve texto con saltos de línea (2-3 renglones) para etiquetas del eje X.
+    Si excede max_lines, recorta y agrega '…'.
+    """
+    if s is None or (isinstance(s, float) and pd.isna(s)):
+        return ""
+    s = str(s).strip()
+    if not s:
+        return ""
+
+    lines = textwrap.wrap(s, width=width)
+    if len(lines) <= max_lines:
+        return "\n".join(lines)
+
+    # Recorte a max_lines con ellipsis
+    kept = lines[: max_lines]
+    if len(kept[-1]) >= 1:
+        kept[-1] = kept[-1][:-1] + "…"
+    else:
+        kept[-1] = "…"
+    return "\n".join(kept)
 
 
 @st.cache_data(show_spinner=False)
@@ -164,7 +189,27 @@ def _mean_numeric(series: pd.Series):
     return pd.to_numeric(series, errors="coerce").mean()
 
 
-def _chart_likert_by_question(df_q: pd.DataFrame):
+def _chart_sections_vertical(sec_df: pd.DataFrame):
+    base = sec_df.copy()
+    base["Sección_wrapped"] = base["Sección"].apply(lambda x: _wrap_text(x, width=16, max_lines=3))
+
+    return (
+        alt.Chart(base)
+        .mark_bar()
+        .encode(
+            x=alt.X(
+                "Sección_wrapped:N",
+                sort=alt.SortField(field="Promedio", order="descending"),
+                axis=alt.Axis(title=None, labelAngle=0, labelLimit=0),
+            ),
+            y=alt.Y("Promedio:Q", axis=alt.Axis(title="Promedio"), scale=alt.Scale(domain=[1, 5])),
+            tooltip=["Sección", alt.Tooltip("Promedio:Q", format=".2f"), "Preguntas"],
+        )
+        .properties(height=320)
+    )
+
+
+def _chart_likert_by_question_vertical(df_q: pd.DataFrame):
     # df_q columns: Pregunta, Promedio
     if df_q.empty:
         return None
@@ -174,18 +219,25 @@ def _chart_likert_by_question(df_q: pd.DataFrame):
     if base.empty:
         return None
 
+    base["Pregunta_wrapped"] = base["Pregunta"].apply(lambda x: _wrap_text(x, width=18, max_lines=3))
+
     return (
         alt.Chart(base)
         .mark_bar()
         .encode(
-            x=alt.X("Promedio:Q", scale=alt.Scale(domain=[1, 5])),
-            y=alt.Y("Pregunta:N", sort="-x"),
-            tooltip=[alt.Tooltip("Promedio:Q", format=".2f"), "Pregunta:N"],
+            x=alt.X(
+                "Pregunta_wrapped:N",
+                sort=alt.SortField(field="Promedio", order="descending"),
+                axis=alt.Axis(title=None, labelAngle=0, labelLimit=0),
+            ),
+            y=alt.Y("Promedio:Q", axis=alt.Axis(title="Promedio"), scale=alt.Scale(domain=[1, 5])),
+            tooltip=[alt.Tooltip("Promedio:Q", format=".2f"), alt.Tooltip("Pregunta:N", title="Pregunta")],
         )
+        .properties(height=340)
     )
 
 
-def _chart_yesno_by_question(df_q: pd.DataFrame):
+def _chart_yesno_by_question_vertical(df_q: pd.DataFrame):
     # df_q columns: Pregunta, % Sí
     if df_q.empty:
         return None
@@ -195,14 +247,21 @@ def _chart_yesno_by_question(df_q: pd.DataFrame):
     if base.empty:
         return None
 
+    base["Pregunta_wrapped"] = base["Pregunta"].apply(lambda x: _wrap_text(x, width=18, max_lines=3))
+
     return (
         alt.Chart(base)
         .mark_bar()
         .encode(
-            x=alt.X("% Sí:Q", scale=alt.Scale(domain=[0, 100])),
-            y=alt.Y("Pregunta:N", sort="-x"),
-            tooltip=[alt.Tooltip("% Sí:Q", format=".1f"), "Pregunta:N"],
+            x=alt.X(
+                "Pregunta_wrapped:N",
+                sort=alt.SortField(field="% Sí", order="descending"),
+                axis=alt.Axis(title=None, labelAngle=0, labelLimit=0),
+            ),
+            y=alt.Y("% Sí:Q", axis=alt.Axis(title="% Sí"), scale=alt.Scale(domain=[0, 100])),
+            tooltip=[alt.Tooltip("% Sí:Q", format=".1f"), alt.Tooltip("Pregunta:N", title="Pregunta")],
         )
+        .properties(height=340)
     )
 
 
@@ -318,11 +377,7 @@ def render_encuesta_calidad(vista: str, carrera: str | None):
         st.dataframe(sec_df.drop(columns=["sec_code"]), use_container_width=True)
 
         st.altair_chart(
-            alt.Chart(sec_df).mark_bar().encode(
-                x=alt.X("Sección:N", sort="-y"),
-                y=alt.Y("Promedio:Q"),
-                tooltip=["Sección", alt.Tooltip("Promedio:Q", format=".2f"), "Preguntas"],
-            ),
+            _chart_sections_vertical(sec_df),
             use_container_width=True,
         )
 
@@ -332,7 +387,7 @@ def render_encuesta_calidad(vista: str, carrera: str | None):
     with tab2:
         st.markdown("### Desglose por sección (comparativo de preguntas)")
 
-        # recalcular sec_df por seguridad (aunque exista)
+        # Recalcular sec_df
         rows = []
         for (sec_code, sec_name), g in mapa_ok.groupby(["section_code", "section_name"]):
             cols = [c for c in g["header_num"].tolist() if c in f.columns and c in likert_cols]
@@ -373,7 +428,7 @@ def render_encuesta_calidad(vista: str, carrera: str | None):
                     st.info("Sin datos para esta sección con los filtros actuales.")
                     continue
 
-                # Likert: tabla + gráfica (barras por pregunta)
+                # Likert
                 qdf_l = qdf[qdf["Tipo"] == "Likert"].copy()
                 if not qdf_l.empty:
                     qdf_l = qdf_l.sort_values("Promedio", ascending=False)
@@ -382,11 +437,11 @@ def render_encuesta_calidad(vista: str, carrera: str | None):
                     show_l = qdf_l[["Pregunta", "Promedio"]].reset_index(drop=True)
                     st.dataframe(show_l, use_container_width=True)
 
-                    chart_l = _chart_likert_by_question(show_l)
+                    chart_l = _chart_likert_by_question_vertical(show_l)
                     if chart_l is not None:
                         st.altair_chart(chart_l, use_container_width=True)
 
-                # Sí/No: tabla + gráfica (barras por pregunta)
+                # Sí/No
                 qdf_y = qdf[qdf["Tipo"] == "Sí/No"].copy()
                 if not qdf_y.empty:
                     qdf_y = qdf_y.sort_values("% Sí", ascending=False)
@@ -395,7 +450,7 @@ def render_encuesta_calidad(vista: str, carrera: str | None):
                     show_y = qdf_y[["Pregunta", "% Sí"]].reset_index(drop=True)
                     st.dataframe(show_y, use_container_width=True)
 
-                    chart_y = _chart_yesno_by_question(show_y)
+                    chart_y = _chart_yesno_by_question_vertical(show_y)
                     if chart_y is not None:
                         st.altair_chart(chart_y, use_container_width=True)
 
