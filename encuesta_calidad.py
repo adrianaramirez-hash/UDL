@@ -55,7 +55,6 @@ def _wrap_text(s: str, width: int = 18, max_lines: int = 3) -> str:
     if len(lines) <= max_lines:
         return "\n".join(lines)
     kept = lines[:max_lines]
-    # ellipsis
     if len(kept[-1]) >= 1:
         kept[-1] = kept[-1][:-1] + "…"
     else:
@@ -197,11 +196,16 @@ def _bar_chart_auto(
     wrap_width_horizontal: int = 30,
     height_per_row: int = 28,
     base_height: int = 260,
+    hide_category_labels: bool = True,  # <-- clave: oculta el texto del eje categórico
 ):
     """
     Gráfica de barras automática:
     - Vertical si n_categorías <= max_vertical
     - Horizontal si n_categorías > max_vertical
+
+    Con hide_category_labels=True:
+    - No se muestran etiquetas del eje categórico (evita texto detrás/encimado)
+    - Se conserva tooltip para identificar cada barra
     """
     if df_in.empty:
         return None
@@ -215,7 +219,21 @@ def _bar_chart_auto(
 
     n = len(df)
 
-    # Wrap labels
+    # Axis configs
+    cat_axis_vertical = alt.Axis(
+        title=None,
+        labels=not hide_category_labels,
+        ticks=not hide_category_labels,
+        labelAngle=0,
+        labelLimit=0,
+    )
+    cat_axis_horizontal = alt.Axis(
+        title=None,
+        labels=not hide_category_labels,
+        ticks=not hide_category_labels,
+        labelLimit=0,
+    )
+
     if n <= max_vertical:
         df["_cat_wrapped"] = df[category_col].apply(lambda x: _wrap_text(x, width=wrap_width_vertical, max_lines=3))
         chart = (
@@ -225,7 +243,7 @@ def _bar_chart_auto(
                 x=alt.X(
                     "_cat_wrapped:N",
                     sort=alt.SortField(field=value_col, order="descending"),
-                    axis=alt.Axis(title=None, labelAngle=0, labelLimit=0),
+                    axis=cat_axis_vertical,
                 ),
                 y=alt.Y(
                     f"{value_col}:Q",
@@ -238,7 +256,7 @@ def _bar_chart_auto(
         )
         return chart
 
-    # Horizontal (mejor para muchas categorías)
+    # Horizontal
     df["_cat_wrapped"] = df[category_col].apply(lambda x: _wrap_text(x, width=wrap_width_horizontal, max_lines=3))
     dynamic_height = max(base_height, n * height_per_row)
 
@@ -249,7 +267,7 @@ def _bar_chart_auto(
             y=alt.Y(
                 "_cat_wrapped:N",
                 sort=alt.SortField(field=value_col, order="descending"),
-                axis=alt.Axis(title=None, labelLimit=0),
+                axis=cat_axis_horizontal,
             ),
             x=alt.X(
                 f"{value_col}:Q",
@@ -385,6 +403,7 @@ def render_encuesta_calidad(vista: str, carrera: str | None):
             wrap_width_vertical=16,
             wrap_width_horizontal=28,
             base_height=300,
+            hide_category_labels=True,  # <-- oculta etiquetas
         )
         if sec_chart is not None:
             st.altair_chart(sec_chart, use_container_width=True)
@@ -395,7 +414,6 @@ def render_encuesta_calidad(vista: str, carrera: str | None):
     with tab2:
         st.markdown("### Desglose por sección (comparativo de preguntas)")
 
-        # Recalcular sec_df para iterar
         rows = []
         for (sec_code, sec_name), g in mapa_ok.groupby(["section_code", "section_name"]):
             cols = [c for c in g["header_num"].tolist() if c in f.columns and c in likert_cols]
@@ -451,11 +469,15 @@ def render_encuesta_calidad(vista: str, carrera: str | None):
                         value_col="Promedio",
                         value_domain=[1, 5],
                         value_title="Promedio",
-                        tooltip_cols=[alt.Tooltip("Promedio:Q", format=".2f"), alt.Tooltip("Pregunta:N", title="Pregunta")],
+                        tooltip_cols=[
+                            alt.Tooltip("Promedio:Q", format=".2f"),
+                            alt.Tooltip("Pregunta:N", title="Pregunta"),
+                        ],
                         max_vertical=MAX_VERTICAL_QUESTIONS,
                         wrap_width_vertical=18,
                         wrap_width_horizontal=34,
                         base_height=320,
+                        hide_category_labels=True,  # <-- oculta etiquetas
                     )
                     if chart_l is not None:
                         st.altair_chart(chart_l, use_container_width=True)
@@ -475,11 +497,15 @@ def render_encuesta_calidad(vista: str, carrera: str | None):
                         value_col="% Sí",
                         value_domain=[0, 100],
                         value_title="% Sí",
-                        tooltip_cols=[alt.Tooltip("% Sí:Q", format=".1f"), alt.Tooltip("Pregunta:N", title="Pregunta")],
+                        tooltip_cols=[
+                            alt.Tooltip("% Sí:Q", format=".1f"),
+                            alt.Tooltip("Pregunta:N", title="Pregunta"),
+                        ],
                         max_vertical=MAX_VERTICAL_QUESTIONS,
                         wrap_width_vertical=18,
                         wrap_width_horizontal=34,
                         base_height=320,
+                        hide_category_labels=True,  # <-- oculta etiquetas
                     )
                     if chart_y is not None:
                         st.altair_chart(chart_y, use_container_width=True)
