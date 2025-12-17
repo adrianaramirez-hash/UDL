@@ -1,4 +1,5 @@
 import streamlit as st
+import observacion_clases
 
 # Configuración básica de la página
 st.set_page_config(page_title="Dirección Académica", layout="wide")
@@ -18,7 +19,7 @@ with col2:
 
 st.divider()
 
-# Selector de vista (AJUSTE: solo quedan 2 vistas)
+# Selector de vista (2 vistas)
 vista = st.selectbox(
     "Selecciona la vista:",
     ["Dirección General", "Director de carrera"],
@@ -83,19 +84,32 @@ seccion = st.selectbox(
 
 st.divider()
 
-# Panel inicial: resumen de selección
-st.subheader("Panel inicial")
+# =========================
+# ROUTER DE SECCIONES
+# =========================
+if seccion == "Observación de clases":
+    observacion_clases.render_observacion_clases(vista=vista, carrera=carrera)
 
-st.write(f"Vista actual: **{vista}**")
+elif seccion == "Encuesta de calidad":
+    st.info("Módulo en construcción: Encuesta de calidad")
 
-if carrera:
-    st.write(f"Carrera seleccionada: **{carrera}**")
+elif seccion == "Evaluación docente":
+    st.info("Módulo en construcción: Evaluación docente")
+
 else:
-    st.write("Carrera seleccionada: *no aplica para esta vista*")
+    # Panel inicial solo para lo que aún no está conectado
+    st.subheader("Panel inicial")
 
-st.write(f"Apartado seleccionado: **{seccion}**")
+    st.write(f"Vista actual: **{vista}**")
 
-st.info(
-    "En los siguientes pasos conectaremos esta sección con la información en Google Sheets "
-    "para mostrar análisis específicos según la vista seleccionada."
-)
+    if carrera:
+        st.write(f"Carrera seleccionada: **{carrera}**")
+    else:
+        st.write("Carrera seleccionada: *no aplica para esta vista*")
+
+    st.write(f"Apartado seleccionado: **{seccion}**")
+
+    st.info(
+        "En los siguientes pasos conectaremos esta sección con la información en Google Sheets "
+        "para mostrar análisis específicos según la vista seleccionada."
+    )
