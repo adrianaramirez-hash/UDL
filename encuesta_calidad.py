@@ -6,7 +6,7 @@ import textwrap
 
 
 # ---------------------------
-# Config visible (nombres completos)
+# Etiquetas de secciones (si tus códigos coinciden con los prefijos _num)
 # ---------------------------
 SECTION_LABELS = {
     "DIR": "Director/Coordinador",
@@ -21,6 +21,7 @@ SECTION_LABELS = {
     "REC": "Recomendación",
 }
 
+# Columnas Sí/No ya convertidas a num (0/1) – ajusta si agregas más
 YESNO_COLS = {
     "ADM_ContactoExiste_num",
     "REC_Volveria_num",
@@ -55,10 +56,7 @@ def _wrap_text(s: str, width: int = 18, max_lines: int = 3) -> str:
     if len(lines) <= max_lines:
         return "\n".join(lines)
     kept = lines[:max_lines]
-    if len(kept[-1]) >= 1:
-        kept[-1] = kept[-1][:-1] + "…"
-    else:
-        kept[-1] = "…"
+    kept[-1] = (kept[-1][:-1] + "…") if len(kept[-1]) >= 1 else "…"
     return "\n".join(kept)
 
 
@@ -93,7 +91,7 @@ def _load_from_gsheets(sheet_id: str):
         raise ValueError(
             "No encontré estas pestañas: "
             + ", ".join(missing)
-            + " | Pestañas disponibles para el service account: "
+            + " | Pestañas disponibles: "
             + ", ".join(titles)
         )
 
@@ -101,6 +99,7 @@ def _load_from_gsheets(sheet_id: str):
     ws_map = sh.worksheet(resolved["Mapa_Preguntas"])
     ws_cat = sh.worksheet(resolved["Catalogo_Servicio"])
 
+    # Evitar error por encabezados duplicados (muchos '¿Por qué?')
     def make_unique_headers(raw_headers):
         seen_base = {}
         used_final = set()
@@ -151,6 +150,7 @@ def _merge_catalogo(df: pd.DataFrame, catalogo: pd.DataFrame) -> pd.DataFrame:
     cat = catalogo.copy()
     cat.columns = [c.strip().lower() for c in cat.columns]
 
+    # Esperamos columnas: programa, servicio, (opcional) carrera
     if "programa" not in cat.columns or "servicio" not in cat.columns:
         return df
 
@@ -196,30 +196,19 @@ def _bar_chart_auto(
     wrap_width_horizontal: int = 30,
     height_per_row: int = 28,
     base_height: int = 260,
-    hide_category_labels: bool = True,  # <-- clave: oculta el texto del eje categórico
+    hide_category_labels: bool = True,
 ):
-    """
-    Gráfica de barras automática:
-    - Vertical si n_categorías <= max_vertical
-    - Horizontal si n_categorías > max_vertical
-
-    Con hide_category_labels=True:
-    - No se muestran etiquetas del eje categórico (evita texto detrás/encimado)
-    - Se conserva tooltip para identificar cada barra
-    """
     if df_in.empty:
         return None
 
     df = df_in.copy()
     df[value_col] = pd.to_numeric(df[value_col], errors="coerce")
     df = df.dropna(subset=[value_col])
-
     if df.empty:
         return None
 
     n = len(df)
 
-    # Axis configs
     cat_axis_vertical = alt.Axis(
         title=None,
         labels=not hide_category_labels,
@@ -236,7 +225,7 @@ def _bar_chart_auto(
 
     if n <= max_vertical:
         df["_cat_wrapped"] = df[category_col].apply(lambda x: _wrap_text(x, width=wrap_width_vertical, max_lines=3))
-        chart = (
+        return (
             alt.Chart(df)
             .mark_bar()
             .encode(
@@ -254,13 +243,11 @@ def _bar_chart_auto(
             )
             .properties(height=max(320, base_height))
         )
-        return chart
 
-    # Horizontal
     df["_cat_wrapped"] = df[category_col].apply(lambda x: _wrap_text(x, width=wrap_width_horizontal, max_lines=3))
     dynamic_height = max(base_height, n * height_per_row)
 
-    chart = (
+    return (
         alt.Chart(df)
         .mark_bar()
         .encode(
@@ -278,10 +265,9 @@ def _bar_chart_auto(
         )
         .properties(height=dynamic_height)
     )
-    return chart
 
 
-def render_encuesta_calidad(vista: str, carrera: str | None):
+def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None):
     st.subheader("Encuesta de calidad")
 
     sheet_id = st.secrets.get("app", {}).get("sheet_id", "")
@@ -297,9 +283,10 @@ def render_encuesta_calidad(vista: str, carrera: str | None):
     if "Marca temporal" in df.columns:
         df["Marca temporal"] = _to_datetime_safe(df["Marca temporal"])
 
+    # Validación mínima del mapa
     required_cols = {"header_exacto", "scale_code", "header_num"}
     if not required_cols.issubset(set(mapa.columns)):
-        st.error("La hoja 'Mapa_Preguntas' no trae: header_exacto, scale_code, header_num.")
+        st.error("La hoja 'Mapa_Preguntas' debe traer: header_exacto, scale_code, header_num.")
         return
 
     mapa = mapa.copy()
@@ -313,43 +300,73 @@ def render_encuesta_calidad(vista: str, carrera: str | None):
     yesno_cols = [c for c in num_cols if _is_yesno_col(c)]
 
     # ---------------------------
-    # Filtros
+    # Barra de filtros (SIN SIDEBAR)
     # ---------------------------
-    with st.sidebar:
-        st.markdown("### Filtros – Encuesta de calidad")
+    # Servicio
+    servicios = ["(Todos)"]
+    if "Servicio" in df.columns:
+        servicios += sorted(df["Servicio"].dropna().unique().tolist())
 
-        if "Servicio" in df.columns:
-            servicios = ["(Todos)"] + sorted(df["Servicio"].dropna().unique().tolist())
-            servicio_sel = st.selectbox("Servicio", servicios, index=0)
+    # Años (desde Marca temporal)
+    years = ["(Todos)"]
+    if "Marca temporal" in df.columns and df["Marca temporal"].notna().any():
+        years += sorted(df["Marca temporal"].dt.year.dropna().unique().astype(int).tolist(), reverse=True)
+
+    # Carreras (desde catálogo mergeado)
+    carreras = ["(Todas)"]
+    if "Carrera_Catalogo" in df.columns:
+        carreras += sorted(df["Carrera_Catalogo"].dropna().unique().tolist())
+
+    # Vista default si no viene desde app.py
+    if vista is None:
+        vista = "Dirección General"
+
+    f1, f2, f3, f4 = st.columns([1.2, 1.0, 1.2, 2.0])
+
+    with f1:
+        servicio_sel = st.selectbox("Servicio", servicios, index=0)
+
+    with f2:
+        year_sel = st.selectbox("Año", years, index=0)
+
+    with f3:
+        vista = st.selectbox("Vista", ["Dirección General", "Director de carrera"],
+                             index=0 if vista == "Dirección General" else 1)
+
+    with f4:
+        if vista == "Director de carrera":
+            # Para director: no tiene sentido (Todas)
+            if carrera and carrera in carreras:
+                carrera_sel = st.selectbox("Carrera", carreras, index=carreras.index(carrera))
+            else:
+                # Si no viene carrera desde app, la elige aquí
+                carrera_sel = st.selectbox("Carrera", ["(Selecciona)"] + carreras[1:], index=0)
         else:
-            servicio_sel = "(Todos)"
-
-        if vista == "Dirección General" and "Carrera_Catalogo" in df.columns:
-            carreras = ["(Todas)"] + sorted(df["Carrera_Catalogo"].dropna().unique().tolist())
+            # Dirección General: puede filtrar o ver todas
             carrera_sel = st.selectbox("Carrera", carreras, index=0)
-        else:
-            carrera_sel = "(Todas)"
 
-        if "Marca temporal" in df.columns and df["Marca temporal"].notna().any():
-            dmin = df["Marca temporal"].min().date()
-            dmax = df["Marca temporal"].max().date()
-            dr = st.date_input("Rango de fechas", value=(dmin, dmax))
-        else:
-            dr = None
+    st.divider()
 
+    # ---------------------------
+    # Aplicar filtros
+    # ---------------------------
     f = df.copy()
 
     if servicio_sel != "(Todos)" and "Servicio" in f.columns:
         f = f[f["Servicio"] == servicio_sel]
 
-    if vista == "Director de carrera" and carrera and "Carrera_Catalogo" in f.columns:
-        f = f[f["Carrera_Catalogo"] == carrera]
+    if year_sel != "(Todos)" and "Marca temporal" in f.columns:
+        f = f[f["Marca temporal"].dt.year == int(year_sel)]
 
-    if vista == "Dirección General" and carrera_sel != "(Todas)" and "Carrera_Catalogo" in f.columns:
-        f = f[f["Carrera_Catalogo"] == carrera_sel]
-
-    if dr and "Marca temporal" in f.columns and len(dr) == 2:
-        f = f[(f["Marca temporal"].dt.date >= dr[0]) & (f["Marca temporal"].dt.date <= dr[1])]
+    if vista == "Director de carrera":
+        if carrera_sel == "(Selecciona)":
+            st.info("Selecciona una carrera para ver resultados en vista Director de carrera.")
+            return
+        if "Carrera_Catalogo" in f.columns:
+            f = f[f["Carrera_Catalogo"] == carrera_sel]
+    else:
+        if carrera_sel != "(Todas)" and "Carrera_Catalogo" in f.columns:
+            f = f[f["Carrera_Catalogo"] == carrera_sel]
 
     st.caption(f"Registros filtrados: **{len(f)}**")
 
@@ -403,7 +420,7 @@ def render_encuesta_calidad(vista: str, carrera: str | None):
             wrap_width_vertical=16,
             wrap_width_horizontal=28,
             base_height=300,
-            hide_category_labels=True,  # <-- oculta etiquetas
+            hide_category_labels=True,
         )
         if sec_chart is not None:
             st.altair_chart(sec_chart, use_container_width=True)
@@ -477,7 +494,7 @@ def render_encuesta_calidad(vista: str, carrera: str | None):
                         wrap_width_vertical=18,
                         wrap_width_horizontal=34,
                         base_height=320,
-                        hide_category_labels=True,  # <-- oculta etiquetas
+                        hide_category_labels=True,
                     )
                     if chart_l is not None:
                         st.altair_chart(chart_l, use_container_width=True)
@@ -505,7 +522,7 @@ def render_encuesta_calidad(vista: str, carrera: str | None):
                         wrap_width_vertical=18,
                         wrap_width_horizontal=34,
                         base_height=320,
-                        hide_category_labels=True,  # <-- oculta etiquetas
+                        hide_category_labels=True,
                     )
                     if chart_y is not None:
                         st.altair_chart(chart_y, use_container_width=True)
