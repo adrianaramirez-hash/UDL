@@ -1,347 +1,256 @@
 # encuesta_calidad.py
+from __future__ import annotations
+
 import re
-import textwrap
-from typing import Dict, List, Tuple
+from datetime import date
+from typing import Dict, List, Tuple, Optional
 
 import altair as alt
-import gspread
 import pandas as pd
 import streamlit as st
+import gspread
 
 
 # =========================
-# Utilidades
+# Helpers: lectura segura de Sheets (headers duplicados)
 # =========================
-def _norm(s: str) -> str:
-    return str(s).strip().lower().replace(" ", "").replace("_", "")
-
-
 def _make_unique_headers(headers: List[str]) -> List[str]:
     """
-    Google Forms suele repetir headers como '¿Por qué?'.
-    gspread.get_all_records() falla con duplicados, por eso aquí los hacemos únicos:
-    '¿Por qué?' -> '¿Por qué?__2', '¿Por qué?__3', etc.
+    Convierte headers duplicados en únicos:
+    Ej: ['¿Por qué?', '¿Por qué?'] -> ['¿Por qué?', '¿Por qué? (2)']
     """
-    counts: Dict[str, int] = {}
+    seen: Dict[str, int] = {}
     out = []
     for h in headers:
         h0 = str(h).strip()
         if h0 == "":
-            h0 = "col"
-        counts[h0] = counts.get(h0, 0) + 1
-        if counts[h0] == 1:
+            h0 = "SIN_TITULO"
+        if h0 not in seen:
+            seen[h0] = 1
             out.append(h0)
         else:
-            out.append(f"{h0}__{counts[h0]}")
+            seen[h0] += 1
+            out.append(f"{h0} ({seen[h0]})")
     return out
 
 
 def _worksheet_to_df(ws) -> pd.DataFrame:
+    """
+    Lee una hoja completa y crea DataFrame aun si hay headers duplicados.
+    """
     values = ws.get_all_values()
-    if not values or len(values) < 2:
+    if not values:
         return pd.DataFrame()
     headers = _make_unique_headers(values[0])
     rows = values[1:]
     df = pd.DataFrame(rows, columns=headers)
-    # normaliza strings vacíos a NaN
-    df = df.replace({"": pd.NA})
+    # Normaliza: convierte strings vacíos en NaN
+    df = df.replace({"": None})
     return df
 
 
-def _safe_float(x):
-    try:
-        if pd.isna(x):
-            return pd.NA
-        return float(x)
-    except Exception:
-        return pd.NA
-
-
-def _coerce_year(series: pd.Series) -> pd.Series:
-    dt = pd.to_datetime(series, errors="coerce")
-    return dt.dt.year
-
-
-def _is_nonempty_text(x) -> bool:
-    return (x is not None) and (not pd.isna(x)) and (str(x).strip() != "")
-
-
-def _percent_match(series: pd.Series, target: str) -> float:
-    """
-    % de target dentro de respuestas NO vacías (denominador = respondieron algo).
-    """
-    if series is None or series.empty:
-        return 0.0
-    s = series.dropna().astype(str).str.strip()
-    denom = len(s)
-    if denom == 0:
-        return 0.0
-    num = (s.str.lower() == target.lower()).sum()
-    return (num / denom) * 100.0
-
-
-# =========================
-# Carga desde Google Sheets
-# =========================
 @st.cache_data(show_spinner=False)
 def _load_from_gsheets(sheet_id: str):
+    # Auth desde secrets
     sa = dict(st.secrets["gcp_service_account"])
     gc = gspread.service_account_from_dict(sa)
+
     sh = gc.open_by_key(sheet_id)
 
-    # Resolver títulos reales (tolerante)
-    wanted = [
-        "Respuestas",
-        "Mapa_Preguntas",
-        "Catalogo_Servicio",
-        "Respuestas_EE",
-        "Mapa_Preguntas_EE",
-        "Diccionario_Escalas",
-    ]
+    # Normalizador tolerante
+    def norm(x: str) -> str:
+        return str(x).strip().lower().replace(" ", "").replace("_", "")
+
+    # Intentamos cargar estas pestañas si existen
+    needed = {
+        "Respuestas": "Respuestas",
+        "Mapa_Preguntas": "Mapa_Preguntas",
+        "Catalogo_Servicio": "Catalogo_Servicio",
+        # opcionales (para Escolarizados/Ejecutivas)
+        "Respuestas_EE": "Respuestas_EE",
+        "Mapa_Preguntas_EE": "Mapa_Preguntas_EE",
+    }
+
     all_ws = sh.worksheets()
-    titles = [w.title for w in all_ws]
-    titles_norm = {_norm(t): t for t in titles}
+    titles = [ws.title for ws in all_ws]
+    titles_norm = {norm(t): t for t in titles}
 
     resolved = {}
-    for w in wanted:
-        wn = _norm(w)
-        if wn in titles_norm:
-            resolved[w] = titles_norm[wn]
+    for k, desired in needed.items():
+        dn = norm(desired)
+        if dn in titles_norm:
+            resolved[k] = titles_norm[dn]
 
-    # DataFrames (si no existe, df vacío)
-    dfs = {}
-    for key in ["Respuestas", "Respuestas_EE"]:
-        if key in resolved:
-            ws = sh.worksheet(resolved[key])
-            dfs[key] = _worksheet_to_df(ws)
-        else:
-            dfs[key] = pd.DataFrame()
+    # Requeridos mínimos:
+    for req in ["Respuestas", "Mapa_Preguntas", "Catalogo_Servicio"]:
+        if req not in resolved:
+            raise ValueError(
+                f"No encontré la pestaña requerida: {needed[req]} | "
+                f"Pestañas visibles para el service account: {', '.join(titles)}"
+            )
 
-    maps = {}
-    for key in ["Mapa_Preguntas", "Mapa_Preguntas_EE"]:
-        if key in resolved:
-            ws = sh.worksheet(resolved[key])
-            maps[key] = _worksheet_to_df(ws)
-        else:
-            maps[key] = pd.DataFrame()
+    ws_resp = sh.worksheet(resolved["Respuestas"])
+    ws_map = sh.worksheet(resolved["Mapa_Preguntas"])
+    ws_cat = sh.worksheet(resolved["Catalogo_Servicio"])
 
-    catalogo = pd.DataFrame()
-    if "Catalogo_Servicio" in resolved:
-        catalogo = _worksheet_to_df(sh.worksheet(resolved["Catalogo_Servicio"]))
+    df_v = _worksheet_to_df(ws_resp)
+    mapa_v = _worksheet_to_df(ws_map)
+    cat = _worksheet_to_df(ws_cat)
 
-    dicc = pd.DataFrame()
-    if "Diccionario_Escalas" in resolved:
-        dicc = _worksheet_to_df(sh.worksheet(resolved["Diccionario_Escalas"]))
+    # Opcionales:
+    df_ee = pd.DataFrame()
+    mapa_ee = pd.DataFrame()
+    if "Respuestas_EE" in resolved and "Mapa_Preguntas_EE" in resolved:
+        ws_resp_ee = sh.worksheet(resolved["Respuestas_EE"])
+        ws_map_ee = sh.worksheet(resolved["Mapa_Preguntas_EE"])
+        df_ee = _worksheet_to_df(ws_resp_ee)
+        mapa_ee = _worksheet_to_df(ws_map_ee)
 
-    return dfs, maps, catalogo, dicc
-
-
-def _merge_catalogo_virtual(df: pd.DataFrame, catalogo: pd.DataFrame) -> pd.DataFrame:
-    """
-    Une catálogo a Virtual/Mixto si existe.
-    Espera que df tenga 'Selecciona el programa académico que estudias'
-    y catalogo tenga una columna tipo 'Programa' y columnas de salida 'Servicio' / 'Carrera_Catalogo' o similares.
-    """
-    if df.empty or catalogo.empty:
-        return df
-
-    # Buscar col de programa en df
-    prog_col_df = None
-    for c in df.columns:
-        if c.strip() == "Selecciona el programa académico que estudias":
-            prog_col_df = c
-            break
-    if not prog_col_df:
-        return df
-
-    # Buscar col programa en catálogo
-    prog_col_cat = None
-    for c in catalogo.columns:
-        if c.strip().lower() in ["programa", "programa_academico", "programaacademico"]:
-            prog_col_cat = c
-            break
-    if not prog_col_cat:
-        # Si el catálogo ya trae el mismo nombre
-        if "Selecciona el programa académico que estudias" in catalogo.columns:
-            prog_col_cat = "Selecciona el programa académico que estudias"
-        else:
-            return df
-
-    # Buscar columnas de salida
-    # Servicio
-    svc_col = None
-    for c in catalogo.columns:
-        if c.strip().lower() in ["servicio", "modalidad_servicio"]:
-            svc_col = c
-            break
-
-    # Carrera_Catalogo
-    car_col = None
-    for c in catalogo.columns:
-        if c.strip().lower() in ["carrera_catalogo", "carrera", "programa_catalogo"]:
-            car_col = c
-            break
-
-    # Merge
-    cat = catalogo.copy()
-    cat = cat.rename(columns={prog_col_cat: "__programa__"})
-    df2 = df.copy()
-    df2 = df2.rename(columns={prog_col_df: "__programa__"})
-
-    dfm = df2.merge(cat, on="__programa__", how="left", suffixes=("", "_cat"))
-    dfm = dfm.rename(columns={"__programa__": prog_col_df})
-
-    # Normaliza columnas estándar si no existen
-    if "Servicio" not in dfm.columns and svc_col:
-        dfm["Servicio"] = dfm[svc_col]
-    if "Carrera_Catalogo" not in dfm.columns and car_col:
-        dfm["Carrera_Catalogo"] = dfm[car_col]
-
-    return dfm
+    return df_v, mapa_v, df_ee, mapa_ee, cat
 
 
-def _ensure_standard_cols(df: pd.DataFrame, modalidad_default: str) -> pd.DataFrame:
+# =========================
+# Normalización de datos
+# =========================
+def _pick_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
+    cols = set(df.columns)
+    for c in candidates:
+        if c in cols:
+            return c
+    return None
+
+
+def _parse_date_series(s: pd.Series) -> pd.Series:
+    # Maneja "Marca temporal" tipo Forms
+    dt = pd.to_datetime(s, errors="coerce", dayfirst=False)
+    return dt.dt.date
+
+
+def _ensure_year(df: pd.DataFrame, fecha_col: str) -> pd.DataFrame:
     df = df.copy()
-    if "Modalidad" not in df.columns:
-        df["Modalidad"] = modalidad_default
-
-    # Servicio/Carrera_Catalogo: si no están, intenta usar el programa como fallback
-    if "Servicio" not in df.columns:
-        # fallback: si existe "Servicio de procedencia" en EE
-        if "Servicio de procedencia" in df.columns:
-            df["Servicio"] = df["Servicio de procedencia"]
-        else:
-            df["Servicio"] = modalidad_default
-
-    if "Carrera_Catalogo" not in df.columns:
-        if "Servicio de procedencia" in df.columns:
-            df["Carrera_Catalogo"] = df["Servicio de procedencia"]
-        elif "Selecciona el programa académico que estudias" in df.columns:
-            df["Carrera_Catalogo"] = df["Selecciona el programa académico que estudias"]
-        else:
-            df["Carrera_Catalogo"] = pd.NA
-
-    # Año
-    if "Anio" not in df.columns:
-        if "Marca temporal" in df.columns:
-            df["Anio"] = _coerce_year(df["Marca temporal"])
-        else:
-            df["Anio"] = pd.NA
-
+    df["_fecha"] = _parse_date_series(df[fecha_col])
+    df["_anio"] = df["_fecha"].apply(lambda x: x.year if isinstance(x, date) else None)
     return df
 
 
-# =========================
-# Mapeo secciones por prefijo
-# =========================
-SECTION_NAMES_VIRTUAL = {
-    "DIR": "Director/ Coordinador",
-    "APR": "Aprendizaje",
-    "MAT": "Materiales en la plataforma",
-    "EVA": "Evaluación del conocimiento",
-    "SEAC": "Soporte académico / SEAC",
-    "ADM": "Acceso a soporte administrativo",
-    "COM": "Comunicación con compañeros",
-    "REC": "Recomendación",
-    "PLAT": "Plataforma SEAC",
-    "UDL": "Comunicación con la Universidad",
-}
-
-SECTION_NAMES_EE = {
-    "DIR_ESC": "Director/ Coordinador",
-    "SER_ESC": "Servicios",
-    "ACD_ESC": "Servicios académicos",
-    "INS_ESC": "Instalaciones y equipo tecnológico",
-    "AMB_ESC": "Ambiente escolar",
-    "REC_ESC": "Recomendación",
-}
-
-
-def _infer_section_from_header_num(header_num: str) -> str:
-    if not header_num or pd.isna(header_num):
-        return "Sin sección"
-    h = str(header_num).strip()
-
-    # EE primero (más específico)
-    for pref, name in SECTION_NAMES_EE.items():
-        if h.startswith(pref + "_"):
-            return name
-
-    # Virtual
-    for pref, name in SECTION_NAMES_VIRTUAL.items():
-        if h.startswith(pref + "_"):
-            return name
-
-    return "Sin sección"
-
-
-def _prepare_map(mapa: pd.DataFrame) -> pd.DataFrame:
+def _clean_mapa(mapa: pd.DataFrame) -> pd.DataFrame:
     """
-    Normaliza el mapa a:
-    header_exacto | scale_code | header_num | seccion
+    Espera columnas:
+      - header_exacto
+      - scale_code
+      - header_num
+    y además usamos 'seccion' para agrupación (si no existe, se intenta derivar).
     """
-    if mapa.empty:
-        return mapa
+    m = mapa.copy()
+    # Normaliza nombres esperados
+    # (si tu hoja usa Sección, seccion, etc.)
+    colmap = {c: c.strip() for c in m.columns}
+    m = m.rename(columns=colmap)
 
-    # normaliza nombres de columnas
-    cols = {c: c.strip() for c in mapa.columns}
-    mapa = mapa.rename(columns=cols)
+    # Columnas mínimas
+    for req in ["header_exacto", "scale_code", "header_num"]:
+        if req not in m.columns:
+            raise ValueError(f"Mapa_Preguntas debe tener columna '{req}'")
 
-    required = ["header_exacto", "scale_code", "header_num"]
-    for r in required:
-        if r not in mapa.columns:
-            raise ValueError(f"Mapa_Preguntas no tiene la columna requerida: {r}")
+    # Sección: si no existe, intenta inferir por prefijo de header_num (ej: MAT_, DIR_, etc.)
+    if "seccion" not in m.columns:
+        def infer_seccion(hn: str) -> str:
+            hn = str(hn)
+            pref = hn.split("_")[0] if "_" in hn else hn[:4]
+            return pref
 
-    mapa2 = mapa.copy()
-    mapa2["header_exacto"] = mapa2["header_exacto"].astype(str).str.strip()
-    mapa2["scale_code"] = mapa2["scale_code"].astype(str).str.strip()
-    mapa2["header_num"] = mapa2["header_num"].astype(str).str.strip()
-    mapa2["seccion"] = mapa2["header_num"].apply(_infer_section_from_header_num)
+        m["seccion"] = m["header_num"].apply(infer_seccion)
 
-    # orden (por sufijo num si existe)
-    def _ord(hnum: str):
-        m = re.search(r"_(\d+)_num$", str(hnum))
-        return int(m.group(1)) if m else 9999
+    # Limpieza básica
+    m["header_exacto"] = m["header_exacto"].astype(str).str.strip()
+    m["scale_code"] = m["scale_code"].astype(str).str.strip()
+    m["header_num"] = m["header_num"].astype(str).str.strip()
+    m["seccion"] = m["seccion"].astype(str).str.strip()
 
-    mapa2["orden"] = mapa2["header_num"].apply(_ord)
-    return mapa2.sort_values(["seccion", "orden", "header_num"]).reset_index(drop=True)
+    # Quita filas vacías
+    m = m[(m["header_exacto"] != "") & (m["header_num"] != "")]
+    return m
 
 
-def _list_comment_columns(df: pd.DataFrame) -> List[str]:
-    if df.empty:
-        return []
-    patterns = [
-        "comentario",
-        "sugerencia",
-        "descríb",
-        "describ",
-        "¿por qué",
-        "por qué",
-        "porque",
-        "en caso afirmativo",
-    ]
-    cols = []
-    for c in df.columns:
-        cl = str(c).strip().lower()
-        if any(p in cl for p in patterns):
-            cols.append(c)
-    # quita duplicados preservando orden
-    seen = set()
-    out = []
+def _merge_catalogo(df: pd.DataFrame, catalogo: pd.DataFrame) -> pd.DataFrame:
+    """
+    Intenta enriquecer df con "Servicio" y "Carrera" usando Catalogo_Servicio.
+    Si no se puede, crea Carrera a partir del campo de programa disponible.
+    """
+    d = df.copy()
+    if d.empty:
+        return d
+
+    # Normaliza nombres de columnas en catálogo
+    cat = catalogo.copy()
+    cat = cat.rename(columns={c: c.strip() for c in cat.columns})
+    # esperamos (ideal): programa | servicio | carrera
+    # tolerante:
+    prog_col = None
+    for c in ["programa", "Programa", "PROGRAMA", "Programa académico", "programa_academico"]:
+        if c in cat.columns:
+            prog_col = c
+            break
+
+    serv_col = None
+    for c in ["servicio", "Servicio", "SERVICIO", "modalidad", "Modalidad"]:
+        if c in cat.columns:
+            serv_col = c
+            break
+
+    carr_col = None
+    for c in ["carrera", "Carrera", "CARRERA"]:
+        if c in cat.columns:
+            carr_col = c
+            break
+
+    # Columna “programa” dentro de respuestas
+    resp_prog = _pick_col(
+        d,
+        [
+            "Selecciona el programa académico que estudias",
+            "Servicio de procedencia",
+            "Programa",
+            "Carrera",
+        ],
+    )
+
+    # Si catálogo tiene programa y al menos servicio/carrera, hacemos merge
+    if prog_col and resp_prog and (serv_col or carr_col):
+        cat2 = cat[[prog_col] + ([serv_col] if serv_col else []) + ([carr_col] if carr_col else [])].copy()
+        cat2 = cat2.rename(columns={prog_col: resp_prog})
+        d = d.merge(cat2, on=resp_prog, how="left")
+
+        # Renombramos a nombres estándar
+        if serv_col and serv_col in d.columns:
+            d = d.rename(columns={serv_col: "Servicio"})
+        if carr_col and carr_col in d.columns:
+            d = d.rename(columns={carr_col: "Carrera"})
+
+    # Si no existe Carrera, la creamos con resp_prog
+    if "Carrera" not in d.columns:
+        if resp_prog:
+            d["Carrera"] = d[resp_prog]
+        else:
+            d["Carrera"] = "Sin clasificar"
+
+    # Si no existe Servicio, lo dejamos como “Sin clasificar”
+    if "Servicio" not in d.columns:
+        d["Servicio"] = "Sin clasificar"
+
+    return d
+
+
+def _coerce_numeric_cols(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
+    d = df.copy()
     for c in cols:
-        if c not in seen:
-            out.append(c)
-            seen.add(c)
-    return out
-
-
-def _wrap_lines(s: str, width: int = 60) -> str:
-    s = str(s).strip()
-    return "\n".join(textwrap.wrap(s, width=width))
+        if c in d.columns:
+            d[c] = pd.to_numeric(d[c], errors="coerce")
+    return d
 
 
 # =========================
-# Cálculos
+# Parche principal: stats sin KeyError por columnas faltantes
 # =========================
 def _compute_section_stats(
     df: pd.DataFrame,
@@ -349,366 +258,439 @@ def _compute_section_stats(
 ) -> Tuple[pd.DataFrame, float, float]:
     """
     Devuelve:
-    - tabla por sección: seccion | promedio | preguntas
+    - tabla por sección: Sección | Promedio | Preguntas
     - promedio_global_likert (excluye YESNO)
     - %sí global (solo YESNO)
+
+    IMPORTANTE: filtra columnas que realmente existan en df para evitar KeyError.
     """
     if df.empty or mapa.empty:
-        return pd.DataFrame(columns=["Sección", "Promedio", "Preguntas"]), float("nan"), float("nan")
+        return (
+            pd.DataFrame(columns=["Sección", "Promedio", "Preguntas"]),
+            float("nan"),
+            float("nan"),
+        )
 
-    # columnas por tipo
-    likert_nums = mapa.loc[mapa["scale_code"].str.upper() != "YESNO", "header_num"].tolist()
-    yesno_nums = mapa.loc[mapa["scale_code"].str.upper() == "YESNO", "header_num"].tolist()
+    # columnas por tipo (desde mapa)
+    likert_nums_all = mapa.loc[mapa["scale_code"].str.upper() != "YESNO", "header_num"].tolist()
+    yesno_nums_all = mapa.loc[mapa["scale_code"].str.upper() == "YESNO", "header_num"].tolist()
 
-    # limpieza a num
-    for c in set(likert_nums + yesno_nums):
-        if c in df.columns:
-            df[c] = df[c].apply(_safe_float)
+    # SOLO las que existen en el df (esto evita KeyError)
+    likert_nums = [c for c in likert_nums_all if c in df.columns]
+    yesno_nums = [c for c in yesno_nums_all if c in df.columns]
 
-    # global
-    global_likert = float(pd.Series(df[likert_nums].stack()).mean()) if likert_nums else float("nan")
-    global_yes = float(pd.Series(df[yesno_nums].stack()).mean()) * 100.0 if yesno_nums else float("nan")
+    # coerce num
+    df = _coerce_numeric_cols(df, list(set(likert_nums + yesno_nums)))
+
+    # global likert
+    if likert_nums:
+        global_likert = float(df[likert_nums].stack().mean())
+    else:
+        global_likert = float("nan")
+
+    # global yes/no (promedio *100)
+    if yesno_nums:
+        global_yes = float(df[yesno_nums].stack().mean()) * 100.0
+    else:
+        global_yes = float("nan")
 
     # por sección
     rows = []
     for seccion, g in mapa.groupby("seccion"):
-        cols = g["header_num"].tolist()
-        cols = [c for c in cols if c in df.columns]
+        cols = [c for c in g["header_num"].tolist() if c in df.columns]
         if not cols:
             continue
-        prom = float(pd.Series(df[cols].stack()).mean())
+        prom = float(df[cols].stack().mean())
         rows.append({"Sección": seccion, "Promedio": prom, "Preguntas": len(cols)})
 
     t = pd.DataFrame(rows)
     if not t.empty:
         t = t.sort_values("Promedio", ascending=False).reset_index(drop=True)
+
     return t, global_likert, global_yes
 
 
-def _question_table_for_section(df: pd.DataFrame, mapa_sec: pd.DataFrame) -> pd.DataFrame:
-    """
-    Devuelve tabla por pregunta:
-    Pregunta | Promedio | n_válidas | %No lo utilizo / %No sé (si aplica)
-    """
-    rows = []
-    for _, r in mapa_sec.iterrows():
-        header_txt = r["header_exacto"]
-        header_num = r["header_num"]
-        scale = str(r["scale_code"]).strip().upper()
+# =========================
+# Visualización
+# =========================
+def _kpi_row(total: int, global_likert: float, global_yes: float):
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric("Respuestas", f"{total:,}")
+    with c2:
+        st.metric("Promedio global (1–5)", "-" if pd.isna(global_likert) else f"{global_likert:.2f}")
+    with c3:
+        st.metric("% Sí (Sí/No)", "-" if pd.isna(global_yes) else f"{global_yes:.1f}%")
 
-        if header_num not in df.columns:
+
+def _build_question_avgs(df: pd.DataFrame, mapa: pd.DataFrame, seccion: str) -> pd.DataFrame:
+    g = mapa[mapa["seccion"] == seccion].copy()
+    cols = [c for c in g["header_num"].tolist() if c in df.columns]
+    if not cols:
+        return pd.DataFrame(columns=["idx", "pregunta", "promedio"])
+
+    df = _coerce_numeric_cols(df, cols)
+
+    # promedios por pregunta
+    avgs = []
+    for _, r in g.iterrows():
+        col = r["header_num"]
+        if col not in df.columns:
             continue
+        prom = float(pd.to_numeric(df[col], errors="coerce").mean())
+        avgs.append({"pregunta": r["header_exacto"], "promedio": prom})
 
-        s_num = pd.to_numeric(df[header_num], errors="coerce")
-        mean = float(s_num.mean()) if s_num.notna().any() else float("nan")
-        n_valid = int(s_num.notna().sum())
+    out = pd.DataFrame(avgs)
+    if out.empty:
+        return pd.DataFrame(columns=["idx", "pregunta", "promedio"])
 
-        pct_na = None
-        pct_label = ""
-        if header_txt in df.columns:
-            if scale == "GRID6_NOUSO":
-                pct_na = _percent_match(df[header_txt], "No lo utilizo")
-                pct_label = "% No lo utilizo"
-            elif scale == "GRID6_NOSE":
-                pct_na = _percent_match(df[header_txt], "No sé")
-                pct_label = "% No sé"
-
-        row = {
-            "Pregunta": header_txt,
-            "Promedio": mean,
-            "n válidas": n_valid,
-        }
-        if pct_na is not None:
-            row[pct_label] = pct_na
-
-        rows.append(row)
-
-    t = pd.DataFrame(rows)
-    if not t.empty:
-        # orden por promedio desc, pero conserva NaN al final
-        t["_ord"] = t["Promedio"].fillna(-9999)
-        t = t.sort_values("_ord", ascending=False).drop(columns=["_ord"]).reset_index(drop=True)
-    return t
+    out = out.sort_values("promedio", ascending=False).reset_index(drop=True)
+    out["idx"] = out.index + 1
+    return out[["idx", "pregunta", "promedio"]]
 
 
-def _chart_questions_in_section(section_name: str, qt: pd.DataFrame) -> alt.Chart:
+def _chart_questions_bar(avgs: pd.DataFrame, title: str):
     """
-    Gráfica vertical comparando preguntas (P1..Pn) y promedio.
-    No dibuja texto debajo de barras; el detalle va en tooltip y en lista P1->Pregunta.
+    Barras verticales (hacia arriba).
+    Para evitar el problema de etiquetas encimadas, NO mostramos texto largo en el eje X.
+    Mostramos índice y el detalle va en hover + una “leyenda” debajo (en texto).
     """
-    if qt.empty:
-        return alt.Chart(pd.DataFrame({"x": [], "y": []}))
+    if avgs.empty:
+        st.info("No hay preguntas con datos numéricos para esta sección en el filtro actual.")
+        return
 
-    dfc = qt.copy()
-    dfc = dfc[dfc["Promedio"].notna()].reset_index(drop=True)
-    if dfc.empty:
-        return alt.Chart(pd.DataFrame({"x": [], "y": []}))
-
-    dfc["Clave"] = ["P" + str(i + 1) for i in range(len(dfc))]
-    dfc["Pregunta_full"] = dfc["Pregunta"].astype(str)
-
-    chart = (
-        alt.Chart(dfc)
+    base = (
+        alt.Chart(avgs)
         .mark_bar()
         .encode(
-            x=alt.X("Clave:N", title=None, axis=alt.Axis(labelAngle=0)),
-            y=alt.Y("Promedio:Q", title="Promedio", scale=alt.Scale(domain=[0, 5])),
+            x=alt.X("idx:O", title=None, axis=alt.Axis(labelAngle=0)),
+            y=alt.Y("promedio:Q", title="Promedio", scale=alt.Scale(domain=[0, 5])),
             tooltip=[
-                alt.Tooltip("Clave:N", title="Pregunta"),
-                alt.Tooltip("Promedio:Q", title="Promedio", format=".2f"),
-                alt.Tooltip("Pregunta_full:N", title="Texto"),
+                alt.Tooltip("promedio:Q", title="Promedio", format=".2f"),
+                alt.Tooltip("pregunta:N", title="Pregunta"),
             ],
         )
-        .properties(height=240)
+        .properties(height=240, title=title)
     )
 
-    return chart
+    st.altair_chart(base, use_container_width=True)
+
+    # “Leyenda” debajo: 2 columnas para que quede en 2–3 renglones
+    items = [f"**{int(r.idx)}.** {r.pregunta}" for r in avgs.itertuples(index=False)]
+    colA, colB = st.columns(2)
+    half = (len(items) + 1) // 2
+    with colA:
+        st.markdown("<br>".join(items[:half]), unsafe_allow_html=True)
+    with colB:
+        st.markdown("<br>".join(items[half:]), unsafe_allow_html=True)
+
+
+def _comments_table(df: pd.DataFrame, mapa: pd.DataFrame):
+    """
+    Muestra columnas de texto relevantes (comentarios, sugerencias, ¿Por qué?, etc.)
+    """
+    if df.empty:
+        st.info("No hay registros para los filtros actuales.")
+        return
+
+    # Columnas numéricas conocidas (para excluir)
+    known_num = set([c for c in mapa["header_num"].tolist() if c in df.columns])
+
+    # Detecta campos de texto tipo comentario
+    def is_comment_col(c: str) -> bool:
+        c0 = c.lower()
+        if c in known_num:
+            return False
+        keywords = [
+            "comentario",
+            "sugerencia",
+            "¿por qué",
+            "por qué",
+            "descríb",
+            "describe",
+        ]
+        return any(k in c0 for k in keywords)
+
+    comment_cols = [c for c in df.columns if is_comment_col(c)]
+    if not comment_cols:
+        st.info("No detecté columnas de comentarios/sugerencias en este filtro.")
+        return
+
+    fecha_col = "_fecha" if "_fecha" in df.columns else None
+    base_cols = []
+    if fecha_col:
+        base_cols.append(fecha_col)
+    if "Servicio" in df.columns:
+        base_cols.append("Servicio")
+    if "Carrera" in df.columns:
+        base_cols.append("Carrera")
+
+    rows = []
+    for _, r in df.iterrows():
+        for c in comment_cols:
+            val = r.get(c)
+            if val is None:
+                continue
+            sval = str(val).strip()
+            if sval == "":
+                continue
+            row = {}
+            if fecha_col:
+                row["Fecha"] = r.get(fecha_col)
+            if "Servicio" in df.columns:
+                row["Servicio"] = r.get("Servicio")
+            if "Carrera" in df.columns:
+                row["Carrera"] = r.get("Carrera")
+            row["Campo"] = c
+            row["Comentario"] = sval
+            rows.append(row)
+
+    out = pd.DataFrame(rows)
+    if out.empty:
+        st.info("No hay comentarios para los filtros actuales.")
+        return
+
+    st.dataframe(out, use_container_width=True, hide_index=True)
 
 
 # =========================
 # Render principal
 # =========================
-def render_encuesta_calidad(vista: str, carrera: str | None):
+def render_encuesta_calidad(vista: str, carrera: Optional[str] = None):
     st.subheader("Encuesta de calidad")
 
-    sheet_id = st.secrets.get("app", {}).get("sheet_id", "")
-    if not sheet_id:
-        st.error("Falta configurar el sheet_id en secrets.")
-        return
+    sheet_id = st.secrets["app"]["sheet_id"]
 
     with st.spinner("Cargando datos oficiales (Google Sheets)…"):
-        dfs, maps, catalogo, _dicc = _load_from_gsheets(sheet_id)
+        df_v, mapa_v, df_ee, mapa_ee, catalogo = _load_from_gsheets(sheet_id)
 
-    df_v = dfs.get("Respuestas", pd.DataFrame())
-    df_ee = dfs.get("Respuestas_EE", pd.DataFrame())
-    mapa_v = _prepare_map(maps.get("Mapa_Preguntas", pd.DataFrame()))
-    mapa_ee = _prepare_map(maps.get("Mapa_Preguntas_EE", pd.DataFrame()))
+    # Limpia mapas
+    mapa_v = _clean_mapa(mapa_v)
+    if not df_ee.empty and not mapa_ee.empty:
+        mapa_ee = _clean_mapa(mapa_ee)
 
-    # Virtual/Mixto: intenta merge catálogo si aplica
-    if not df_v.empty:
-        df_v = _merge_catalogo_virtual(df_v, catalogo)
-        df_v = _ensure_standard_cols(df_v, modalidad_default="Virtual/Mixto")
-
-    # EE
+    # Enriquecemos con catálogo
+    df_v = _merge_catalogo(df_v, catalogo)
     if not df_ee.empty:
-        df_ee = _ensure_standard_cols(df_ee, modalidad_default="Escolarizados/Ejecutivas")
+        df_ee = _merge_catalogo(df_ee, catalogo)
 
-    # Unión
-    frames = []
-    if not df_v.empty:
-        frames.append(df_v)
+    # Aseguramos fecha/año (Marca temporal)
+    fecha_v = _pick_col(df_v, ["Marca temporal", "Timestamp", "Marca de tiempo"])
+    if fecha_v:
+        df_v = _ensure_year(df_v, fecha_v)
+    else:
+        df_v["_fecha"] = None
+        df_v["_anio"] = None
+
     if not df_ee.empty:
-        frames.append(df_ee)
+        fecha_ee = _pick_col(df_ee, ["Marca temporal", "Timestamp", "Marca de tiempo"])
+        if fecha_ee:
+            df_ee = _ensure_year(df_ee, fecha_ee)
+        else:
+            df_ee["_fecha"] = None
+            df_ee["_anio"] = None
 
-    if not frames:
-        st.warning("No se encontraron hojas de respuestas disponibles en el Sheet maestro.")
-        return
+    # Etiqueta de “Servicio” por dataset (si el catálogo no lo llenó bien)
+    # Esto ayuda a tener un filtro consistente por modalidad
+    if "Servicio" in df_v.columns:
+        df_v["Servicio"] = df_v["Servicio"].fillna("Virtual")
+    else:
+        df_v["Servicio"] = "Virtual"
 
-    df_all = pd.concat(frames, ignore_index=True, sort=False)
+    if not df_ee.empty:
+        if "Servicio" in df_ee.columns:
+            df_ee["Servicio"] = df_ee["Servicio"].fillna("Escolarizados/Ejecutivas")
+        else:
+            df_ee["Servicio"] = "Escolarizados/Ejecutivas"
 
-    # Selección de mapa por modalidad (para cálculos)
-    maps_by_modalidad = []
-    if not mapa_v.empty:
-        maps_by_modalidad.append(("Virtual/Mixto", mapa_v))
-    if not mapa_ee.empty:
-        maps_by_modalidad.append(("Escolarizados/Ejecutivas", mapa_ee))
+    # Unificamos datasets con una columna de control de mapa
+    df_v["_map_key"] = "V"
+    df_ee["_map_key"] = "EE" if not df_ee.empty else None
 
-    if not maps_by_modalidad:
-        st.error("No se encontraron mapas (Mapa_Preguntas / Mapa_Preguntas_EE).")
-        return
+    df_all = pd.concat([df_v, df_ee], ignore_index=True) if not df_ee.empty else df_v.copy()
 
     # =========================
-    # FILTROS (SIN SIDEBAR)
+    # Filtros (SIN sidebar)
     # =========================
-    # opciones
-    modalidades = sorted([m for m in df_all["Modalidad"].dropna().unique().tolist()])
+    # Servicio disponible
     servicios = sorted([s for s in df_all["Servicio"].dropna().unique().tolist()])
-    anios = sorted([int(a) for a in df_all["Anio"].dropna().unique().tolist() if str(a).isdigit()])
+    anios = sorted([a for a in df_all["_anio"].dropna().unique().tolist()])
 
-    colA, colB, colC, colD = st.columns([1.2, 1.0, 1.2, 1.4], gap="large")
+    # Bloqueo por vista
+    is_dir_carrera = (vista == "Director de carrera")
+    carrera_bloqueada = carrera if is_dir_carrera else None
 
-    with colA:
-        modalidad_sel = st.selectbox("Modalidad", ["(Todas)"] + modalidades, index=0)
+    # UI filtros debajo del título (fila)
+    c1, c2, c3 = st.columns([1.2, 1.0, 1.8])
 
-    with colB:
-        anio_sel = st.selectbox("Año", ["(Todos)"] + [str(a) for a in anios], index=0)
-
-    with colC:
+    with c1:
         servicio_sel = st.selectbox("Servicio", ["(Todos)"] + servicios, index=0)
 
-    # Carrera: en DG sí, en Director de carrera se bloquea
-    if vista == "Dirección General":
-        carreras = sorted([c for c in df_all["Carrera_Catalogo"].dropna().unique().tolist()])
-        with colD:
+    with c2:
+        anio_sel = st.selectbox("Año", ["(Todos)"] + [str(a) for a in anios], index=0)
+
+    with c3:
+        # Carrera: solo visible en Dirección General
+        if is_dir_carrera:
+            # no mostramos nada para evitar que el director lo “vea”
+            carrera_sel = carrera_bloqueada
+        else:
+            carreras = sorted([s for s in df_all["Carrera"].dropna().unique().tolist()])
             carrera_sel = st.selectbox("Carrera", ["(Todas)"] + carreras, index=0)
-    else:
-        carrera_sel = carrera if carrera else ""
-        with colD:
-            st.markdown("**Carrera**")
-            st.write(carrera_sel if carrera_sel else "—")
 
     # Aplica filtros
     dff = df_all.copy()
-
-    if modalidad_sel != "(Todas)":
-        dff = dff[dff["Modalidad"] == modalidad_sel]
-
-    if anio_sel != "(Todos)":
-        dff = dff[dff["Anio"].astype(str) == str(anio_sel)]
-
     if servicio_sel != "(Todos)":
         dff = dff[dff["Servicio"] == servicio_sel]
 
-    if vista == "Dirección General":
-        if carrera_sel != "(Todas)":
-            dff = dff[dff["Carrera_Catalogo"] == carrera_sel]
-    else:
-        if carrera_sel:
-            dff = dff[dff["Carrera_Catalogo"] == carrera_sel]
+    if anio_sel != "(Todos)":
+        dff = dff[dff["_anio"] == int(anio_sel)]
+
+    if is_dir_carrera and carrera_bloqueada:
+        dff = dff[dff["Carrera"] == carrera_bloqueada]
+    elif (not is_dir_carrera) and carrera_sel != "(Todas)":
+        dff = dff[dff["Carrera"] == carrera_sel]
 
     st.caption(f"Registros filtrados: {len(dff)}")
 
-    # Determina mapa activo según modalidad filtrada (si es “todas”, usa unión de mapas)
-    if modalidad_sel != "(Todas)":
-        mapa_activo = None
-        for m, mp in maps_by_modalidad:
-            if m == modalidad_sel:
-                mapa_activo = mp
-                break
-        if mapa_activo is None:
-            # fallback: usa el primero
-            mapa_activo = maps_by_modalidad[0][1]
-    else:
-        # unión de mapas disponibles
-        mapa_activo = pd.concat([mp for _, mp in maps_by_modalidad], ignore_index=True, sort=False)
-        mapa_activo = mapa_activo.drop_duplicates(subset=["header_num"]).reset_index(drop=True)
+    # Selección de mapa según dataset
+    # Si el filtro mezcla V y EE, entonces trabajamos por bloque:
+    # - Resumen global: se calcula con columnas existentes (parche lo soporta)
+    # - Por sección: usamos el mapa correspondiente en cada bloque
+    # Para simplificar: si hay mezcla, mostramos secciones por dataset.
+    has_v = (dff["_map_key"] == "V").any()
+    has_ee = (dff["_map_key"] == "EE").any()
+
+    tabs = st.tabs(["Resumen", "Por sección", "Comentarios"])
 
     # =========================
-    # TABS
+    # RESUMEN
     # =========================
-    tab_resumen, tab_seccion, tab_coment = st.tabs(["Resumen", "Por sección", "Comentarios"])
-
-    with tab_resumen:
-        # KPIs
-        t_sec, global_likert, global_yes = _compute_section_stats(dff, mapa_activo)
-
-        k1, k2, k3 = st.columns(3, gap="large")
-        with k1:
-            st.metric("Respuestas", value=str(len(dff)))
-        with k2:
-            st.metric("Promedio global (Likert 1–5)", value="—" if pd.isna(global_likert) else f"{global_likert:.2f}")
-        with k3:
-            st.metric("% Sí (preguntas Sí/No)", value="—" if pd.isna(global_yes) else f"{global_yes:.1f}%")
-
-        st.markdown("### Promedio por sección (Likert 1–5)")
-        if t_sec.empty:
-            st.info("No hay datos suficientes para calcular promedios por sección con los filtros actuales.")
+    with tabs[0]:
+        if dff.empty:
+            st.info("No hay datos para los filtros actuales.")
         else:
-            st.dataframe(
-                t_sec.style.format({"Promedio": "{:.2f}"}),
-                use_container_width=True,
-                hide_index=True,
-            )
+            # Promedios globales: aplicamos el parche por cada mapa y promediamos ponderado por cantidad de respuestas
+            def block_stats(block_df: pd.DataFrame, block_map: pd.DataFrame):
+                sec, gl, gy = _compute_section_stats(block_df, block_map)
+                return sec, gl, gy
 
-            # Gráfica por sección (vertical)
-            dfc = t_sec.copy()
-            dfc["Sección_full"] = dfc["Sección"].astype(str)
-            dfc["Clave"] = ["S" + str(i + 1) for i in range(len(dfc))]
+            global_likert_vals = []
+            global_yes_vals = []
+            weights = []
 
-            chart = (
-                alt.Chart(dfc)
-                .mark_bar()
-                .encode(
-                    x=alt.X("Clave:N", title=None, axis=alt.Axis(labelAngle=0)),
-                    y=alt.Y("Promedio:Q", title="Promedio", scale=alt.Scale(domain=[0, 5])),
-                    tooltip=[
-                        alt.Tooltip("Clave:N", title="Sección"),
-                        alt.Tooltip("Promedio:Q", title="Promedio", format=".2f"),
-                        alt.Tooltip("Sección_full:N", title="Nombre"),
-                    ],
-                )
-                .properties(height=260)
-            )
-            st.altair_chart(chart, use_container_width=True)
+            if has_v:
+                d_v = dff[dff["_map_key"] == "V"].copy()
+                _, gl, gy = block_stats(d_v, mapa_v)
+                if not pd.isna(gl):
+                    global_likert_vals.append(gl)
+                    weights.append(len(d_v))
+                if not pd.isna(gy):
+                    global_yes_vals.append(gy)
 
-            # Mapeo debajo (clave -> nombre)
-            st.markdown("**Secciones (clave → nombre):**")
-            for _, r in dfc.iterrows():
-                st.write(f"- **{r['Clave']}**: {r['Sección_full']}")
+            if has_ee and (not df_ee.empty) and (not mapa_ee.empty):
+                d_e = dff[dff["_map_key"] == "EE"].copy()
+                _, gl, gy = block_stats(d_e, mapa_ee)
+                if not pd.isna(gl):
+                    global_likert_vals.append(gl)
+                    weights.append(len(d_e))
+                if not pd.isna(gy):
+                    global_yes_vals.append(gy)
 
-    with tab_seccion:
-        if mapa_activo.empty:
-            st.info("No hay mapa de preguntas para mostrar secciones.")
-        else:
-            # agrupa por sección
-            for seccion, mp_sec in mapa_activo.groupby("seccion"):
-                with st.expander(seccion, expanded=False):
-                    qt = _question_table_for_section(dff, mp_sec)
-
-                    # promedio sección
-                    # (promedio de todos los promedios de preguntas con datos)
-                    sec_mean = float(pd.Series(qt["Promedio"]).dropna().mean()) if not qt.empty else float("nan")
-                    st.markdown(
-                        f"**Promedio de la sección:** {'—' if pd.isna(sec_mean) else f'{sec_mean:.2f}'}"
-                    )
-
-                    # tabla preguntas
-                    if qt.empty:
-                        st.info("Sin datos para esta sección con los filtros actuales.")
-                        continue
-
-                    st.dataframe(
-                        qt.style.format({c: "{:.2f}" for c in qt.columns if c in ["Promedio", "% No lo utilizo", "% No sé"]}),
-                        use_container_width=True,
-                        hide_index=True,
-                    )
-
-                    # gráfica comparativa por sección (solo si hay 2+ preguntas con promedio)
-                    chart_df = qt[qt["Promedio"].notna()].copy()
-                    if len(chart_df) >= 2:
-                        chart = _chart_questions_in_section(seccion, qt)
-                        st.altair_chart(chart, use_container_width=True)
-
-                        # Mapeo P1->pregunta debajo (sin estorbar la gráfica)
-                        chart_df = chart_df.reset_index(drop=True)
-                        chart_df["Clave"] = ["P" + str(i + 1) for i in range(len(chart_df))]
-
-                        st.markdown("**Preguntas (clave → texto):**")
-                        for _, r in chart_df.iterrows():
-                            st.write(f"- **{r['Clave']}**: {_wrap_lines(r['Pregunta'], width=90)}")
-
-    with tab_coment:
-        cols = _list_comment_columns(dff)
-        if not cols:
-            st.info("No se detectaron columnas de comentarios/sugerencias en las respuestas filtradas.")
-        else:
-            search = st.text_input("Buscar texto en comentarios (opcional)", value="").strip().lower()
-
-            # recolecta comentarios
-            records = []
-            for c in cols:
-                if c not in dff.columns:
-                    continue
-                ser = dff[c]
-                for idx, val in ser.items():
-                    if not _is_nonempty_text(val):
-                        continue
-                    txt = str(val).strip()
-                    if search and (search not in txt.lower()):
-                        continue
-
-                    rec = {
-                        "Modalidad": dff.at[idx, "Modalidad"] if "Modalidad" in dff.columns else "",
-                        "Servicio": dff.at[idx, "Servicio"] if "Servicio" in dff.columns else "",
-                        "Carrera": dff.at[idx, "Carrera_Catalogo"] if "Carrera_Catalogo" in dff.columns else "",
-                        "Año": dff.at[idx, "Anio"] if "Anio" in dff.columns else "",
-                        "Campo": c,
-                        "Comentario": txt,
-                    }
-                    records.append(rec)
-
-            if not records:
-                st.info("No hay comentarios que coincidan con el filtro actual.")
+            # Promedio ponderado (si hay 2 bloques)
+            if global_likert_vals and weights and sum(weights) > 0:
+                global_likert = sum(v * w for v, w in zip(global_likert_vals, weights)) / sum(weights)
             else:
-                com_df = pd.DataFrame(records)
-                st.dataframe(com_df, use_container_width=True, hide_index=True)
+                global_likert = float("nan")
+
+            # %sí: si hay dos bloques, promediamos simple (son proporciones distintas según instrumento)
+            global_yes = float("nan")
+            if global_yes_vals:
+                global_yes = sum(global_yes_vals) / len(global_yes_vals)
+
+            _kpi_row(total=len(dff), global_likert=global_likert, global_yes=global_yes)
+
+            st.markdown("### Promedio por sección (1–5)")
+            # Tabla por sección: si hay mezcla, mostramos por bloque con subtítulos
+            if has_v:
+                sec_v, _, _ = _compute_section_stats(dff[dff["_map_key"] == "V"].copy(), mapa_v)
+                if not sec_v.empty:
+                    st.markdown("**Virtual**")
+                    st.dataframe(sec_v, use_container_width=True, hide_index=True)
+            if has_ee and (not df_ee.empty) and (not mapa_ee.empty):
+                sec_e, _, _ = _compute_section_stats(dff[dff["_map_key"] == "EE"].copy(), mapa_ee)
+                if not sec_e.empty:
+                    st.markdown("**Escolarizados/Ejecutivas**")
+                    st.dataframe(sec_e, use_container_width=True, hide_index=True)
+
+    # =========================
+    # POR SECCIÓN (expanders con gráfica por sección)
+    # =========================
+    with tabs[1]:
+        if dff.empty:
+            st.info("No hay datos para los filtros actuales.")
+        else:
+            def render_block(block_name: str, block_df: pd.DataFrame, block_map: pd.DataFrame):
+                sec_tbl, _, _ = _compute_section_stats(block_df, block_map)
+                if sec_tbl.empty:
+                    st.info(f"No hay secciones con datos numéricos para: {block_name}")
+                    return
+
+                # Orden por promedio desc
+                for _, row in sec_tbl.iterrows():
+                    seccion = row["Sección"]
+                    prom = row["Promedio"]
+                    n = int(row["Preguntas"])
+
+                    with st.expander(f"{seccion} — Promedio {prom:.2f} ({n} preguntas)", expanded=False):
+                        avgs = _build_question_avgs(block_df, block_map, seccion)
+                        _chart_questions_bar(avgs, title=f"{seccion} — comparación de preguntas")
+
+                        st.markdown("#### Preguntas y promedios")
+                        if not avgs.empty:
+                            st.dataframe(
+                                avgs[["pregunta", "promedio"]].rename(
+                                    columns={"pregunta": "Pregunta", "promedio": "Promedio"}
+                                ),
+                                use_container_width=True,
+                                hide_index=True,
+                            )
+
+            # Si hay mezcla, separamos por instrumento
+            if has_v and has_ee:
+                st.markdown("### Virtual")
+                render_block("Virtual", dff[dff["_map_key"] == "V"].copy(), mapa_v)
+
+                st.markdown("---")
+                st.markdown("### Escolarizados/Ejecutivas")
+                if not df_ee.empty and not mapa_ee.empty:
+                    render_block("Escolarizados/Ejecutivas", dff[dff["_map_key"] == "EE"].copy(), mapa_ee)
+            else:
+                # Un solo bloque
+                if has_v:
+                    render_block("Virtual", dff[dff["_map_key"] == "V"].copy(), mapa_v)
+                else:
+                    if not df_ee.empty and not mapa_ee.empty:
+                        render_block("Escolarizados/Ejecutivas", dff[dff["_map_key"] == "EE"].copy(), mapa_ee)
+
+    # =========================
+    # COMENTARIOS
+    # =========================
+    with tabs[2]:
+        if dff.empty:
+            st.info("No hay datos para los filtros actuales.")
+        else:
+            # Si hay mezcla, mostramos comentarios por bloque (para que no se mezclen campos distintos)
+            if has_v and has_ee:
+                st.markdown("### Virtual")
+                _comments_table(dff[dff["_map_key"] == "V"].copy(), mapa_v)
+                st.markdown("---")
+                st.markdown("### Escolarizados/Ejecutivas")
+                if not df_ee.empty and not mapa_ee.empty:
+                    _comments_table(dff[dff["_map_key"] == "EE"].copy(), mapa_ee)
+            else:
+                if has_v:
+                    _comments_table(dff[dff["_map_key"] == "V"].copy(), mapa_v)
+                else:
+                    if not df_ee.empty and not mapa_ee.empty:
+                        _comments_table(dff[dff["_map_key"] == "EE"].copy(), mapa_ee)
