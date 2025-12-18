@@ -1,5 +1,4 @@
 import streamlit as st
-import observacion_clases
 import encuesta_calidad
 
 # Configuración básica de la página
@@ -63,9 +62,8 @@ if vista == "Director de carrera":
             "Maestría en Finanzas",
             "Maestría: Tecnología e Innovación Educativa",
             "Maestría en Educación Especial",
-             "Maestría: Entrenamiento Deportivo",
+            "Maestría: Entrenamiento Deportivo",
             "Licenciatura Entrenamiento Deportivo",
-            
         ],
     )
 
@@ -92,11 +90,13 @@ st.divider()
 # =========================
 # ROUTER DE SECCIONES
 # =========================
-if seccion == "Observación de clases":
-    observacion_clases.render_observacion_clases(vista=vista, carrera=carrera)
-
-elif seccion == "Encuesta de calidad":
+if seccion == "Encuesta de calidad":
     encuesta_calidad.render_encuesta_calidad(vista=vista, carrera=carrera)
+
+elif seccion == "Observación de clases":
+    st.warning(
+        "Observación de clases está temporalmente deshabilitado mientras estabilizamos la conexión a datos."
+    )
 
 elif seccion == "Evaluación docente":
     st.info("Módulo en construcción: Evaluación docente")
