@@ -300,50 +300,42 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
     yesno_cols = [c for c in num_cols if _is_yesno_col(c)]
 
     # ---------------------------
-    # Barra de filtros (SIN SIDEBAR)
+    # Barra de filtros (SIN SIDEBAR) - SIN repetir VISTA
     # ---------------------------
-    # Servicio
     servicios = ["(Todos)"]
     if "Servicio" in df.columns:
         servicios += sorted(df["Servicio"].dropna().unique().tolist())
 
-    # Años (desde Marca temporal)
     years = ["(Todos)"]
     if "Marca temporal" in df.columns and df["Marca temporal"].notna().any():
-        years += sorted(df["Marca temporal"].dt.year.dropna().unique().astype(int).tolist(), reverse=True)
+        years += sorted(
+            df["Marca temporal"].dt.year.dropna().unique().astype(int).tolist(),
+            reverse=True
+        )
 
-    # Carreras (desde catálogo mergeado)
     carreras = ["(Todas)"]
     if "Carrera_Catalogo" in df.columns:
         carreras += sorted(df["Carrera_Catalogo"].dropna().unique().tolist())
 
-    # Vista default si no viene desde app.py
-    if vista is None:
+    if not vista:
         vista = "Dirección General"
 
-    f1, f2, f3, f4 = st.columns([1.2, 1.0, 1.2, 2.0])
-
-    with f1:
-        servicio_sel = st.selectbox("Servicio", servicios, index=0)
-
-    with f2:
-        year_sel = st.selectbox("Año", years, index=0)
-
-    with f3:
-        vista = st.selectbox("Vista", ["Dirección General", "Director de carrera"],
-                             index=0 if vista == "Dirección General" else 1)
-
-    with f4:
-        if vista == "Director de carrera":
-            # Para director: no tiene sentido (Todas)
-            if carrera and carrera in carreras:
-                carrera_sel = st.selectbox("Carrera", carreras, index=carreras.index(carrera))
-            else:
-                # Si no viene carrera desde app, la elige aquí
-                carrera_sel = st.selectbox("Carrera", ["(Selecciona)"] + carreras[1:], index=0)
-        else:
-            # Dirección General: puede filtrar o ver todas
+    if vista == "Dirección General":
+        f1, f2, f3 = st.columns([1.2, 1.0, 2.3])
+        with f1:
+            servicio_sel = st.selectbox("Servicio", servicios, index=0)
+        with f2:
+            year_sel = st.selectbox("Año", years, index=0)
+        with f3:
             carrera_sel = st.selectbox("Carrera", carreras, index=0)
+    else:
+        f1, f2 = st.columns([1.2, 1.0])
+        with f1:
+            servicio_sel = st.selectbox("Servicio", servicios, index=0)
+        with f2:
+            year_sel = st.selectbox("Año", years, index=0)
+
+        carrera_sel = carrera  # viene desde app.py
 
     st.divider()
 
@@ -359,8 +351,8 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
         f = f[f["Marca temporal"].dt.year == int(year_sel)]
 
     if vista == "Director de carrera":
-        if carrera_sel == "(Selecciona)":
-            st.info("Selecciona una carrera para ver resultados en vista Director de carrera.")
+        if not carrera_sel:
+            st.info("Selecciona una carrera en la parte superior para ver resultados.")
             return
         if "Carrera_Catalogo" in f.columns:
             f = f[f["Carrera_Catalogo"] == carrera_sel]
