@@ -329,13 +329,13 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
 
         c1, c2, c3 = st.columns([1.3, 1.0, 2.2])
         with c1:
-            st.selectbox("Modalidad", _modalidades(), index=_modalidades().index(modalidad), disabled=True)
+    st.markdown(f"**Modalidad:** {modalidad}")
         with c2:
             year_sel = st.selectbox("Año", years, index=0)
         with c3:
             carrera_sel = st.selectbox("Carrera", carreras, index=0)
     else:
-        c1, c2 = st.columns([1.3, 1.0])
+       c1, c2 = st.columns([1.2, 2.8])
         with c1:
             st.text_input("Carrera (fija por vista)", value=(carrera or ""), disabled=True)
         with c2:
