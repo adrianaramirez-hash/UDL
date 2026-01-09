@@ -19,7 +19,8 @@ SCOPES = [
 @st.cache_data(ttl=60)
 def cargar_datos_desde_sheets():
     # Credenciales desde secrets (Streamlit Cloud)
-    creds_dict = json.loads(st.secrets["gcp_service_account_json"])
+ raw = st.secrets["gcp_service_account_json"]
+creds_dict = dict(raw) if isinstance(raw, dict) else json.loads(raw)
     creds = Credentials.from_service_account_info(
         creds_dict,
         scopes=SCOPES,
