@@ -4,6 +4,7 @@ import streamlit as st
 import altair as alt
 import gspread
 import textwrap
+import unicodedata
 
 # ============================================================
 # Etiquetas de secciones (fallback si Mapa_Preguntas no trae section_name)
@@ -76,6 +77,52 @@ def _wrap_text(s: str, width: int = 18, max_lines: int = 3) -> str:
 
 def _mean_numeric(series: pd.Series):
     return pd.to_numeric(series, errors="coerce").mean()
+
+
+def _norm_txt(x: str) -> str:
+    if x is None:
+        return ""
+    s = str(x).strip().lower()
+    s = "".join(ch for ch in unicodedata.normalize("NFKD", s) if not unicodedata.combining(ch))  # sin acentos
+    s = " ".join(s.split())  # colapsa espacios
+    return s
+
+
+def _strip_prefixes(s: str) -> str:
+    t = _norm_txt(s)
+    prefixes = [
+        "licenciatura ejecutiva:",
+        "lic. ejecutiva:",
+        "licenciatura:",
+        "lic.",
+    ]
+    for p in prefixes:
+        if t.startswith(p):
+            t = _norm_txt(t.replace(p, "", 1))
+    return t
+
+
+def _match_carrera_mask(series: pd.Series, target_raw: str) -> pd.Series:
+    """
+    Match robusto:
+    1) exacto normalizado (con y sin prefijos)
+    2) fallback: contains normalizado (con y sin prefijos)
+    """
+    s_norm = series.astype(str).map(_norm_txt)
+    t1 = _norm_txt(target_raw)
+    t2 = _strip_prefixes(target_raw)
+
+    m_exact = (s_norm == t1) | (s_norm == t2)
+    if m_exact.any():
+        return m_exact
+
+    m_cont = pd.Series(False, index=series.index)
+    if t1:
+        m_cont = m_cont | s_norm.str.contains(t1, na=False)
+    if t2 and t2 != t1:
+        m_cont = m_cont | s_norm.str.contains(t2, na=False)
+
+    return m_cont
 
 
 def _bar_chart_auto(
@@ -252,14 +299,14 @@ def _normalize_mapa_to_expected_schema(mapa: pd.DataFrame) -> pd.DataFrame:
     m = mapa.copy()
     cols = set(m.columns)
 
-    # Si ya viene en el formato esperado, no tocar de más
+    # Formato esperado
     if {"header_exacto", "scale_code", "header_num"}.issubset(cols):
         m["header_exacto"] = m["header_exacto"].astype(str).str.strip()
         m["scale_code"] = m["scale_code"].astype(str).str.strip()
         m["header_num"] = m["header_num"].astype(str).str.strip()
         return m
 
-    # Intentar convertir desde LAB
+    # Convertir desde LAB
     if not {"header_raw", "header_id"}.issubset(cols):
         return m
 
@@ -298,7 +345,7 @@ def _auto_classify_numcols(df: pd.DataFrame, cols: list[str]) -> tuple[list[str]
     if not cols:
         return [], []
     dnum = df[cols].apply(pd.to_numeric, errors="coerce")
-    dnum = dnum.loc[:, ~dnum.columns.duplicated()]  # ✅ evita duplicados
+    dnum = dnum.loc[:, ~dnum.columns.duplicated()]  # evita duplicados
 
     maxs = dnum.max(axis=0, skipna=True)
 
@@ -652,13 +699,16 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
         df[fecha_col] = _to_datetime_safe(df[fecha_col])
 
     # ---------------------------
-    # ✅ Normalización de MAPA (soporta LAB)
+    # Normalización de MAPA (soporta LAB)
     # ---------------------------
     mapa = _normalize_mapa_to_expected_schema(mapa)
 
     required_cols = {"header_exacto", "scale_code", "header_num"}
     if not required_cols.issubset(set(mapa.columns)):
-        st.error("La hoja 'Mapa_Preguntas' debe traer: header_exacto, scale_code, header_num (o LAB: header_raw, header_id, tipo).")
+        st.error(
+            "La hoja 'Mapa_Preguntas' debe traer: header_exacto, scale_code, header_num "
+            "(o LAB: header_raw, header_id, tipo)."
+        )
         st.caption(f"Columnas detectadas: {list(mapa.columns)}")
         return
 
@@ -762,7 +812,7 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
                 f = f[f[carrera_col].astype(str).str.strip() == str(carrera_sel).strip()]
     else:
         if modalidad != "Preparatoria":
-            # ✅ Ajuste para LAB: incluye columnas típicas de escolarizados/ejecutivas
+            # ✅ FIX DC: incluye columnas LAB + match robusto (sin acentos/prefijos) + fallback contains
             candidates = [
                 c for c in [
                     "Carrera_Catalogo",
@@ -780,9 +830,10 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
                 return
 
             target = str(carrera_sel).strip()
-            mask = False
+            mask = pd.Series(False, index=f.index)
             for c in candidates:
-                mask = mask | (f[c].astype(str).str.strip() == target)
+                mask = mask | _match_carrera_mask(f[c], target)
+
             f = f[mask]
 
     st.caption(f"Hoja usada: **PROCESADO** | Registros filtrados: **{len(f)}**")
