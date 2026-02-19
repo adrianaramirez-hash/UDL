@@ -2,7 +2,6 @@ import pandas as pd
 import streamlit as st
 import altair as alt
 import gspread
-import textwrap
 from io import BytesIO
 
 SECTION_LABELS = {
@@ -131,9 +130,9 @@ def render_encuesta_calidad(vista=None, carrera=None):
     st.subheader("Encuesta de calidad")
     vista = (vista or "Dirección General").strip()
 
-    # =========================
-    # ===== VISTA FINANZAS =====
-    # =========================
+    # =====================================================
+    # ================= VISTA FINANZAS ====================
+    # =====================================================
 
     if vista == "Dirección Finanzas":
 
@@ -168,9 +167,9 @@ def render_encuesta_calidad(vista=None, carrera=None):
         st.dataframe(f, use_container_width=True)
         return
 
-    # =========================
-    # ===== CARGA GENERAL =====
-    # =========================
+    # =====================================================
+    # ================= VISTA GENERAL =====================
+    # =====================================================
 
     modalidad = "Escolarizado / Ejecutivas"
 
@@ -228,15 +227,16 @@ def render_encuesta_calidad(vista=None, carrera=None):
         st.warning("No hay datos con los filtros seleccionados.")
         return
 
-    # =========================
-    # NORMALIZAR MAPA
-    # =========================
+    # =====================================================
+    # NORMALIZAR MAPA (LAB O NUEVO)
+    # =====================================================
 
     if "header_num" not in mapa.columns:
 
         if {"header_raw", "header_id", "tipo"}.issubset(set(mapa.columns)):
 
             mapa = mapa.copy()
+
             mapa["header_num"] = (
                 mapa["header_id"].astype(str).str.strip() +
                 mapa["tipo"].astype(str).str.upper().map({
@@ -247,9 +247,18 @@ def render_encuesta_calidad(vista=None, carrera=None):
             st.error("Mapa_Preguntas no tiene estructura válida.")
             st.stop()
 
-    # =========================
+    mapa["section_code"] = mapa["header_num"].apply(_section_from_numcol)
+
+    mapa["section_name"] = (
+        mapa["section_code"]
+        .map(SECTION_LABELS)
+        .fillna(mapa["section_code"])
+        .astype(str)
+    )
+
+    # =====================================================
     # KPIs
-    # =========================
+    # =====================================================
 
     numeric_cols = [c for c in f.columns if c.endswith("_num")]
     likert_cols, yesno_cols = _auto_classify_numcols(f, numeric_cols)
@@ -273,9 +282,9 @@ def render_encuesta_calidad(vista=None, carrera=None):
         kpis
     )
 
-    # =========================
+    # =====================================================
     # TABS
-    # =========================
+    # =====================================================
 
     if vista == "Dirección General":
         tab1, tab2, tab4, tab3 = st.tabs(
@@ -285,9 +294,9 @@ def render_encuesta_calidad(vista=None, carrera=None):
         tab1, tab2, tab3 = st.tabs(["Resumen", "Por sección", "Comentarios"])
         tab4 = None
 
-    # =========================
-    # RESUMEN
-    # =========================
+    # =====================================================
+    # RESUMEN + GRÁFICA POR SECCIÓN
+    # =====================================================
 
     with tab1:
 
@@ -295,16 +304,11 @@ def render_encuesta_calidad(vista=None, carrera=None):
 
         c1.metric("Respuestas", len(f))
 
-        if promedio_global:
+        if promedio_global is not None:
             c2.metric("Promedio global", promedio_global)
 
-        if pct_si:
+        if pct_si is not None:
             c3.metric("% Sí", f"{pct_si}%")
-
-        # Promedio por sección
-
-        mapa["section_code"] = mapa["header_num"].apply(_section_from_numcol)
-        mapa["section_name"] = mapa["section_code"].map(SECTION_LABELS)
 
         rows = []
 
@@ -317,17 +321,16 @@ def render_encuesta_calidad(vista=None, carrera=None):
 
             val = pd.to_numeric(f[cols].stack(), errors="coerce").mean()
 
-            if pd.isna(val):
-                continue
-
-            rows.append({
-                "Sección": sec_name,
-                "Promedio": round(val, 2)
-            })
+            if pd.notna(val):
+                rows.append({
+                    "Sección": sec_name,
+                    "Promedio": round(val, 2)
+                })
 
         if rows:
             sec_df = pd.DataFrame(rows).sort_values("Promedio", ascending=False)
 
+            st.markdown("### Promedio por sección")
             st.dataframe(sec_df, use_container_width=True)
 
             chart = (
@@ -343,15 +346,15 @@ def render_encuesta_calidad(vista=None, carrera=None):
 
             st.altair_chart(chart, use_container_width=True)
 
-    # =========================
-    # POR SECCIÓN DETALLE
-    # =========================
+    # =====================================================
+    # DETALLE POR SECCIÓN
+    # =====================================================
 
     with tab2:
 
         for sec_code, sec_name in mapa[["section_code", "section_name"]].drop_duplicates().values:
 
-            with st.expander(sec_name):
+            with st.expander(str(sec_name)):
 
                 cols = mapa[
                     (mapa["section_code"] == sec_code) &
@@ -376,9 +379,9 @@ def render_encuesta_calidad(vista=None, carrera=None):
                     qdf = pd.DataFrame(rows).sort_values("Promedio", ascending=False)
                     st.dataframe(qdf, use_container_width=True)
 
-    # =========================
+    # =====================================================
     # COMPARATIVO DG
-    # =========================
+    # =====================================================
 
     if tab4:
 
@@ -410,12 +413,12 @@ def render_encuesta_calidad(vista=None, carrera=None):
                     if rows:
                         comp_df = pd.DataFrame(rows).sort_values("Promedio", ascending=False)
 
-                        with st.expander(sec_name):
+                        with st.expander(str(sec_name)):
                             st.dataframe(comp_df, use_container_width=True)
 
-    # =========================
+    # =====================================================
     # COMENTARIOS
-    # =========================
+    # =====================================================
 
     with tab3:
 
@@ -431,7 +434,10 @@ def render_encuesta_calidad(vista=None, carrera=None):
             sec = col.split("_")[0]
             section_map.setdefault(sec, []).append(col)
 
-        section_names = {sec: SECTION_LABELS.get(sec, sec) for sec in section_map}
+        section_names = {
+            sec: SECTION_LABELS.get(sec, sec)
+            for sec in section_map
+        }
 
         section_sel = st.selectbox(
             "Sección",
