@@ -227,7 +227,7 @@ def _best_carrera_col(df: pd.DataFrame) -> str | None:
         "Carrera_Catalogo",
         "Servicio",
         "Selecciona el programa académico que estudias",  # Virtual típico
-        "Servicio de procedencia",                        # Escolar típico (si quedó)
+        "Servicio de procedencia",                        # Escolar típico (LAB)
         "Programa",
         "Carrera",
     ]
@@ -260,19 +260,13 @@ def _normalize_mapa_to_expected_schema(mapa: pd.DataFrame) -> pd.DataFrame:
         return m
 
     # Intentar convertir desde LAB
-    # Requeridos mínimos LAB
     if not {"header_raw", "header_id"}.issubset(cols):
-        # No puedo inferir; deja que falle con error claro
         return m
 
-    # header_exacto
     m["header_exacto"] = m["header_raw"].astype(str).str.strip()
 
-    # scale_code (no lo usas para calcular, pero tu validación lo requiere)
-    # Si hay "tipo": LIKERT / YESNO / ABIERTA
     if "tipo" in cols:
         t = m["tipo"].astype(str).str.strip().str.upper()
-        # mapea a códigos genéricos
         m["scale_code"] = t.map({
             "LIKERT": "LIKERT_1_5",
             "YESNO": "YESNO_0_1",
@@ -281,7 +275,6 @@ def _normalize_mapa_to_expected_schema(mapa: pd.DataFrame) -> pd.DataFrame:
     else:
         m["scale_code"] = "LIKERT_1_5"
 
-    # header_num: para LIKERT/YESNO => _num; para ABIERTA => _txt
     hid = m["header_id"].astype(str).str.strip()
     if "tipo" in cols:
         t = m["tipo"].astype(str).str.strip().str.upper()
@@ -289,7 +282,6 @@ def _normalize_mapa_to_expected_schema(mapa: pd.DataFrame) -> pd.DataFrame:
     else:
         m["header_num"] = hid + "_num"
 
-    # Deja section_name si existe (tu lógica posterior la usa/ajusta)
     if "section_name" in cols:
         m["section_name"] = m["section_name"].fillna("").astype(str).str.strip()
 
@@ -306,11 +298,10 @@ def _auto_classify_numcols(df: pd.DataFrame, cols: list[str]) -> tuple[list[str]
     if not cols:
         return [], []
     dnum = df[cols].apply(pd.to_numeric, errors="coerce")
-
-    # ✅ evita error por headers duplicados (truth value of Series ambiguous, etc.)
-    dnum = dnum.loc[:, ~dnum.columns.duplicated()]
+    dnum = dnum.loc[:, ~dnum.columns.duplicated()]  # ✅ evita duplicados
 
     maxs = dnum.max(axis=0, skipna=True)
+
     likert_cols = []
     for c in cols:
         if c not in maxs.index:
@@ -771,9 +762,21 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
                 f = f[f[carrera_col].astype(str).str.strip() == str(carrera_sel).strip()]
     else:
         if modalidad != "Preparatoria":
-            candidates = [c for c in ["Carrera_Catalogo", "Servicio", "Selecciona el programa académico que estudias"] if c in f.columns]
+            # ✅ Ajuste para LAB: incluye columnas típicas de escolarizados/ejecutivas
+            candidates = [
+                c for c in [
+                    "Carrera_Catalogo",
+                    "Servicio",
+                    "Servicio de procedencia",
+                    "Selecciona el programa académico que estudias",
+                    "Programa",
+                    "Carrera",
+                ]
+                if c in f.columns
+            ]
             if not candidates:
                 st.warning("No encontré columnas para filtrar por carrera en esta modalidad.")
+                st.caption(f"Columnas disponibles: {list(f.columns)}")
                 return
 
             target = str(carrera_sel).strip()
