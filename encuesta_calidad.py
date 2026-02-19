@@ -3,12 +3,7 @@ import streamlit as st
 import altair as alt
 import gspread
 import textwrap
-import unicodedata
 from io import BytesIO
-
-# =========================
-# CONFIGURACIÓN GENERAL
-# =========================
 
 SECTION_LABELS = {
     "DIR": "Director / Coordinación",
@@ -29,27 +24,19 @@ SECTION_LABELS = {
     "OTR": "Otros",
 }
 
-MAX_VERTICAL_QUESTIONS = 7
-MAX_VERTICAL_SECTIONS = 7
-
 SHEET_PROCESADO = "PROCESADO"
 SHEET_MAPA = "MAPA_PREGUNTAS"
-SHEET_CATALOGO = "Catalogo_Servicio"
 
 FINANZAS_SHEET_ID = "11qszwEcEA6vvy7XYGo-w_WkqPp1kxoNG5GfJB_Wcc4A"
 FINANZAS_SHEET_NAME = "VISTA_FINANZAS_NUM"
 
-
-# =========================
-# UTILIDADES GENERALES
-# =========================
 
 def _to_datetime_safe(s):
     return pd.to_datetime(s, errors="coerce", dayfirst=True)
 
 
 def _pick_fecha_col(df):
-    for c in ["Marca temporal", "Marca Temporal", "Fecha", "fecha", "timestamp", "Timestamp"]:
+    for c in ["Marca temporal", "Marca Temporal", "Fecha", "fecha"]:
         if c in df.columns:
             return c
     return None
@@ -57,22 +44,6 @@ def _pick_fecha_col(df):
 
 def _mean_numeric(series):
     return pd.to_numeric(series, errors="coerce").mean()
-
-
-def _section_from_numcol(col: str) -> str:
-    return col.split("_", 1)[0] if "_" in col else "OTR"
-
-
-def _wrap_text(s: str, width: int = 18, max_lines: int = 3) -> str:
-    if pd.isna(s):
-        return ""
-    s = str(s).strip()
-    lines = textwrap.wrap(s, width=width)
-    if len(lines) <= max_lines:
-        return "\n".join(lines)
-    kept = lines[:max_lines]
-    kept[-1] = kept[-1][:-1] + "…"
-    return "\n".join(kept)
 
 
 def _auto_classify_numcols(df, cols):
@@ -85,28 +56,16 @@ def _auto_classify_numcols(df, cols):
     return likert, yesno
 
 
-# =========================
-# EXPORTACIÓN PROFESIONAL
-# =========================
+def _section_from_numcol(col):
+    return col.split("_", 1)[0]
+
 
 def _create_excel_download(df, kpis_df, filename):
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         df.to_excel(writer, sheet_name="DATA_FILTRADA", index=False)
-
-        if kpis_df is not None and not kpis_df.empty:
+        if kpis_df is not None:
             kpis_df.to_excel(writer, sheet_name="KPIS", index=False)
-
-            workbook = writer.book
-            worksheet = writer.sheets["KPIS"]
-            header_format = workbook.add_format({
-                "bold": True,
-                "bg_color": "#002147",
-                "font_color": "white"
-            })
-            for col_num, value in enumerate(kpis_df.columns.values):
-                worksheet.write(0, col_num, value, header_format)
-
     output.seek(0)
 
     st.download_button(
@@ -120,10 +79,9 @@ def _create_excel_download(df, kpis_df, filename):
 
 def _download_buttons(df, filename_prefix, kpis_df=None):
 
-    if df is None or df.empty:
+    if df.empty:
         return
 
-    st.markdown("## ")
     st.markdown("### 📥 Exportación de información")
 
     col1, col2 = st.columns(2)
@@ -145,39 +103,22 @@ def _download_buttons(df, filename_prefix, kpis_df=None):
             f"{filename_prefix}.xlsx"
         )
 
-    st.markdown("---")
 
-
-# =========================
-# CARGA DE DATOS
-# =========================
-
-@st.cache_data(show_spinner=False, ttl=300)
-def _load_from_gsheets_by_url(url):
+@st.cache_data(ttl=300)
+def _load_general(url):
     sa = dict(st.secrets["gcp_service_account_json"])
     gc = gspread.service_account_from_dict(sa)
     sh = gc.open_by_url(url)
 
-    def normalize(x):
-        return str(x).strip().lower().replace(" ", "").replace("_", "")
-
-    titles = {normalize(ws.title): ws.title for ws in sh.worksheets()}
-
-    def get_ws(expected_name):
-        key = normalize(expected_name)
-        if key not in titles:
-            raise ValueError(f"No encontré hoja {expected_name}")
-        ws = sh.worksheet(titles[key])
+    def ws_df(name):
+        ws = sh.worksheet(name)
         data = ws.get_all_values()
         return pd.DataFrame(data[1:], columns=data[0]).replace("", pd.NA)
 
-    df = get_ws(SHEET_PROCESADO)
-    mapa = get_ws(SHEET_MAPA)
-
-    return df, mapa
+    return ws_df(SHEET_PROCESADO), ws_df(SHEET_MAPA)
 
 
-@st.cache_data(show_spinner=False, ttl=300)
+@st.cache_data(ttl=300)
 def _load_finanzas():
     sa = dict(st.secrets["gcp_service_account_json"])
     gc = gspread.service_account_from_dict(sa)
@@ -185,14 +126,14 @@ def _load_finanzas():
     ws = sh.worksheet(FINANZAS_SHEET_NAME)
     data = ws.get_all_values()
     return pd.DataFrame(data[1:], columns=data[0]).replace("", pd.NA)
-def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None):
+def render_encuesta_calidad(vista=None, carrera=None):
 
     st.subheader("Encuesta de calidad")
     vista = (vista or "Dirección General").strip()
 
-    # =====================================================
-    # ================= VISTA FINANZAS ====================
-    # =====================================================
+    # =========================
+    # ===== VISTA FINANZAS =====
+    # =========================
 
     if vista == "Dirección Finanzas":
 
@@ -217,25 +158,19 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
         if year_sel != "(Todos)" and fecha_col:
             f = f[f[fecha_col].dt.year == int(year_sel)]
 
-        st.caption(f"Registros filtrados: {len(f)}")
-
         kpis = pd.DataFrame({
             "Indicador": ["Total registros"],
             "Valor": [len(f)]
         })
 
-        _download_buttons(
-            f,
-            f"encuesta_finanzas_{year_sel}",
-            kpis
-        )
+        _download_buttons(f, f"finanzas_{year_sel}", kpis)
 
         st.dataframe(f, use_container_width=True)
         return
 
-    # =====================================================
-    # ================= VISTA GENERAL =====================
-    # =====================================================
+    # =========================
+    # ===== CARGA GENERAL =====
+    # =========================
 
     modalidad = "Escolarizado / Ejecutivas"
 
@@ -251,7 +186,7 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
         "Preparatoria": "EC_PREPA_URL"
     }[modalidad])
 
-    df, mapa = _load_from_gsheets_by_url(url)
+    df, mapa = _load_general(url)
 
     if df.empty:
         st.warning("Sin datos disponibles.")
@@ -265,13 +200,7 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
         years += sorted(df[fecha_col].dt.year.dropna().unique(), reverse=True)
 
     carrera_col = None
-    for c in [
-        "Carrera_Catalogo",
-        "Servicio",
-        "Selecciona el programa académico que estudias",
-        "Programa",
-        "Carrera",
-    ]:
+    for c in ["Carrera_Catalogo", "Servicio", "Programa", "Carrera"]:
         if c in df.columns:
             carrera_col = c
             break
@@ -295,45 +224,32 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
     if carrera_sel and carrera_sel != "(Todas)" and carrera_col:
         f = f[f[carrera_col] == carrera_sel]
 
-    st.caption(f"Registros filtrados: {len(f)}")
+    if f.empty:
+        st.warning("No hay datos con los filtros seleccionados.")
+        return
 
-    # =====================================================
-    # ===== NORMALIZAR MAPA (COMPATIBLE LAB Y NUEVO) =====
-    # =====================================================
+    # =========================
+    # NORMALIZAR MAPA
+    # =========================
 
     if "header_num" not in mapa.columns:
 
         if {"header_raw", "header_id", "tipo"}.issubset(set(mapa.columns)):
 
             mapa = mapa.copy()
-
-            mapa["header_exacto"] = mapa["header_raw"].astype(str).str.strip()
-
-            mapa["scale_code"] = (
-                mapa["tipo"]
-                .astype(str)
-                .str.upper()
-                .map({
-                    "LIKERT": "LIKERT_1_5",
-                    "YESNO": "YESNO_0_1",
-                    "ABIERTA": "ABIERTA"
-                })
-            )
-
             mapa["header_num"] = (
                 mapa["header_id"].astype(str).str.strip() +
                 mapa["tipo"].astype(str).str.upper().map({
                     "ABIERTA": "_txt"
                 }).fillna("_num")
             )
-
         else:
-            st.error("La hoja MAPA_PREGUNTAS no tiene estructura válida.")
+            st.error("Mapa_Preguntas no tiene estructura válida.")
             st.stop()
 
-    # =====================================================
-    # ================= KPIs GENERALES ====================
-    # =====================================================
+    # =========================
+    # KPIs
+    # =========================
 
     numeric_cols = [c for c in f.columns if c.endswith("_num")]
     likert_cols, yesno_cols = _auto_classify_numcols(f, numeric_cols)
@@ -357,45 +273,44 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
         kpis
     )
 
-    if f.empty:
-        st.warning("No hay datos con los filtros seleccionados.")
-        return
+    # =========================
+    # TABS
+    # =========================
 
-    # =====================================================
-    # ==================== TABS ===========================
-    # =====================================================
+    if vista == "Dirección General":
+        tab1, tab2, tab4, tab3 = st.tabs(
+            ["Resumen", "Por sección", "Comparativo entre carreras", "Comentarios"]
+        )
+    else:
+        tab1, tab2, tab3 = st.tabs(["Resumen", "Por sección", "Comentarios"])
+        tab4 = None
 
-    tab1, tab2, tab3 = st.tabs(["Resumen", "Por sección", "Comentarios"])
-
-    # ================= RESUMEN =================
+    # =========================
+    # RESUMEN
+    # =========================
 
     with tab1:
 
-        col1, col2, col3 = st.columns(3)
+        c1, c2, c3 = st.columns(3)
 
-        col1.metric("Respuestas", len(f))
+        c1.metric("Respuestas", len(f))
 
-        if promedio_global is not None:
-            col2.metric("Promedio global", promedio_global)
+        if promedio_global:
+            c2.metric("Promedio global", promedio_global)
 
-        if pct_si is not None:
-            col3.metric("% Sí", f"{pct_si}%")
+        if pct_si:
+            c3.metric("% Sí", f"{pct_si}%")
 
-    # ================= POR SECCIÓN =================
+        # Promedio por sección
 
-    with tab2:
-
-        mapa = mapa.copy()
         mapa["section_code"] = mapa["header_num"].apply(_section_from_numcol)
         mapa["section_name"] = mapa["section_code"].map(SECTION_LABELS)
 
-        mapa_ok = mapa[mapa["header_num"].isin(f.columns)]
-
         rows = []
 
-        for (sec_code, sec_name), g in mapa_ok.groupby(["section_code", "section_name"]):
+        for (sec_code, sec_name), g in mapa.groupby(["section_code", "section_name"]):
 
-            cols = [c for c in g["header_num"].tolist() if c in likert_cols]
+            cols = [c for c in g["header_num"] if c in likert_cols]
 
             if not cols:
                 continue
@@ -410,28 +325,97 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
                 "Promedio": round(val, 2)
             })
 
-        if not rows:
-            st.info("Sin datos suficientes.")
-            return
+        if rows:
+            sec_df = pd.DataFrame(rows).sort_values("Promedio", ascending=False)
 
-        sec_df = pd.DataFrame(rows).sort_values("Promedio", ascending=False)
+            st.dataframe(sec_df, use_container_width=True)
 
-        st.dataframe(sec_df, use_container_width=True)
-
-        chart = (
-            alt.Chart(sec_df)
-            .mark_bar()
-            .encode(
-                x=alt.X("Sección:N", sort="-y"),
-                y="Promedio:Q",
-                tooltip=["Sección", "Promedio"]
+            chart = (
+                alt.Chart(sec_df)
+                .mark_bar()
+                .encode(
+                    x=alt.X("Sección:N", sort="-y"),
+                    y="Promedio:Q",
+                    tooltip=["Sección", "Promedio"]
+                )
+                .properties(height=350)
             )
-            .properties(height=350)
-        )
 
-        st.altair_chart(chart, use_container_width=True)
+            st.altair_chart(chart, use_container_width=True)
 
-    # ================= COMENTARIOS =================
+    # =========================
+    # POR SECCIÓN DETALLE
+    # =========================
+
+    with tab2:
+
+        for sec_code, sec_name in mapa[["section_code", "section_name"]].drop_duplicates().values:
+
+            with st.expander(sec_name):
+
+                cols = mapa[
+                    (mapa["section_code"] == sec_code) &
+                    (mapa["header_num"].isin(likert_cols))
+                ]["header_num"].tolist()
+
+                if not cols:
+                    st.info("Sin datos.")
+                    continue
+
+                rows = []
+
+                for col in cols:
+                    val = _mean_numeric(f[col])
+                    if pd.notna(val):
+                        rows.append({
+                            "Pregunta": col,
+                            "Promedio": round(val, 2)
+                        })
+
+                if rows:
+                    qdf = pd.DataFrame(rows).sort_values("Promedio", ascending=False)
+                    st.dataframe(qdf, use_container_width=True)
+
+    # =========================
+    # COMPARATIVO DG
+    # =========================
+
+    if tab4:
+
+        with tab4:
+
+            if not carrera_col:
+                st.info("No hay columna carrera.")
+            else:
+
+                for (sec_code, sec_name), g in mapa.groupby(["section_code", "section_name"]):
+
+                    cols = [c for c in g["header_num"] if c in likert_cols]
+
+                    if not cols:
+                        continue
+
+                    rows = []
+
+                    for carrera_val, df_c in f.groupby(carrera_col):
+
+                        val = pd.to_numeric(df_c[cols].stack(), errors="coerce").mean()
+
+                        if pd.notna(val):
+                            rows.append({
+                                "Carrera": carrera_val,
+                                "Promedio": round(val, 2)
+                            })
+
+                    if rows:
+                        comp_df = pd.DataFrame(rows).sort_values("Promedio", ascending=False)
+
+                        with st.expander(sec_name):
+                            st.dataframe(comp_df, use_container_width=True)
+
+    # =========================
+    # COMENTARIOS
+    # =========================
 
     with tab3:
 
@@ -439,7 +423,7 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
         open_cols = [c for c in open_cols if f[c].notna().any()]
 
         if not open_cols:
-            st.info("No hay comentarios disponibles.")
+            st.info("No hay comentarios.")
             return
 
         section_map = {}
