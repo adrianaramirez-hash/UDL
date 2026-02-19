@@ -47,73 +47,6 @@ SHEET_CATALOGO = "Catalogo_Servicio"  # opcional
 
 
 # ============================================================
-# PASO 1 — Restricción DF por columnas "humanas" (VISTA_FINANZAS_NUM)
-# Nota: estos nombres deben coincidir EXACTO con los encabezados de tu hoja DF
-# ============================================================
-DF_ALLOWED_COLUMNS = {
-    "Preparatoria": [
-        "En general ¿Qué tan satisfecho estás con el servicio que te brinda la Universidad de Londres?",
-        "¿Recomendarías a alguien más estudiar en la Universidad de Londres?",
-        "Enfermería",
-        "Admisiones",
-        "Cobranzas",
-        "Servicios escolares",
-        "Vigilancia",
-        "Intendencia (limpieza)",
-        "Mantenimiento de instalaciones",
-        "Plataforma SEAC en general",
-        "SEAC (Apps Móviles de la Universidad para Android y iPhone)",
-        "SEAC (facilidad para ingresar)",
-        "SEAC (trámites administrativos)",
-        "SEAC (tareas y trabajos)",
-        "Laboratorio de cómputo",
-        "Salones de Clase",
-        "Sanitarios",
-        "Equipo didáctico hyflex (cañón, pantalla, televisión, DVD etc.)",
-        "Instalaciones del plantel (comodidad, alumbrado, pintura, ventilación, otras)",
-        "Instalaciones específicas de mi servicio para el aprendizaje",
-        "Biblioteca",
-        "Cafetería",
-        "Espacios al aire libre",
-        "Wifi para estudiantes",
-        "Patio para educación física",
-    ],
-    "Escolarizado / Ejecutivas": [
-        "Paramédico",
-        "Admisiones",
-        "Cobranzas",
-        "Servicios escolares",
-        "Becas",
-        "Vigilancia",
-        "Intendencia (limpieza)",
-        "Mantenimiento de instalaciones",
-        "Plataforma SEAC en general",
-        "Apps Móviles de la Universidad para Android y iPhone",
-        "facilidad para ingresar",
-        "trámites administrativos",
-        "Laboratorio de cómputo",
-        "Salones de Clase",
-        "Sanitarios",
-        "En general ¿Qué tan satisfecho estás con el servicio que te brinda la Universidad de Londres?",
-        "¿Recomendarías a alguien más estudiar en la Universidad de Londres?",
-    ],
-    # Si todavía no definimos Virtual para DF, lo dejamos vacío para que NO filtre
-    "Virtual / Mixto": [],
-}
-
-# Aliases para tolerar variaciones mínimas (por ejemplo acentos/espacios)
-# clave = como viene en DF_ALLOWED_COLUMNS, valor = como podría venir en el Sheet
-DF_COL_ALIASES = {
-    # PREPA
-    "Plataforma SEAC en general": "Plataforma SEAC en general",
-    "SEAC (trámites administrativos)": "SEAC ( trámites administrativos)",
-    "Instalaciones específicas de mi servicio para el aprendizaje": "Instalaciones especificas de mi servicio para el aprendizaje",
-    # ESCOLARIZADOS
-    "Apps Móviles de la Universidad para Android y iPhone": "Apps Móviles de la Universidad para Android y iPhone",
-}
-
-
-# ============================================================
 # Helpers
 # ============================================================
 def _section_from_numcol(col: str) -> str:
@@ -556,23 +489,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
         mapa["exists"] = mapa["header_num"].isin(df.columns)
         mapa_ok = mapa[mapa["exists"]].copy()
 
-        # ------------------------------------------------------------
-        # PASO 2 — Filtrar el mapa SOLO para Dirección Finanzas
-        # (DF_ALLOWED_HEADERS trae header_id; aquí lo convertimos a columnas reales)
-        # ------------------------------------------------------------
-        if vista == "Dirección Finanzas":
-            allowed_ids = DF_ALLOWED_HEADERS.get(modalidad, set())
-            if allowed_ids:
-                # En PROCESADO normalmente las columnas numéricas son *_num,
-                # pero por seguridad aceptamos ambas formas: ID y ID_num
-                allowed_cols = set()
-                for hid in allowed_ids:
-                    allowed_cols.add(str(hid))
-                    allowed_cols.add(f"{str(hid)}_num")
-
-                # Filtrar el mapa por header_num (que es el nombre real de columna en PROCESADO)
-                mapa_ok = mapa_ok[mapa_ok["header_num"].isin(allowed_cols)].copy()
-
         # Columnas numéricas *_num
         num_cols = [c for c in df.columns if str(c).endswith("_num")]
         if not num_cols:
@@ -595,7 +511,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
         # ---------------------------
         with tab1:
             c1, c2, c3 = st.columns(3)
-
             c1.metric("Respuestas", f"{len(f)}")
 
             if likert_cols:
