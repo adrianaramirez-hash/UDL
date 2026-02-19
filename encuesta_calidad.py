@@ -4,6 +4,7 @@ import altair as alt
 import gspread
 import textwrap
 import unicodedata
+from io import BytesIO
 
 SECTION_LABELS = {
     "DIR": "Director / Coordinación",
@@ -24,6 +25,9 @@ SECTION_LABELS = {
     "OTR": "Otros",
 }
 
+MAX_VERTICAL_QUESTIONS = 7
+MAX_VERTICAL_SECTIONS = 7
+
 SHEET_PROCESADO = "PROCESADO"
 SHEET_MAPA = "MAPA_PREGUNTAS"
 SHEET_CATALOGO = "Catalogo_Servicio"
@@ -36,6 +40,10 @@ def _to_datetime_safe(s):
     return pd.to_datetime(s, errors="coerce", dayfirst=True)
 
 
+def _mean_numeric(series):
+    return pd.to_numeric(series, errors="coerce").mean()
+
+
 def _pick_fecha_col(df):
     for c in ["Marca temporal", "Fecha", "timestamp"]:
         if c in df.columns:
@@ -43,31 +51,86 @@ def _pick_fecha_col(df):
     return None
 
 
-def _mean_numeric(series):
-    return pd.to_numeric(series, errors="coerce").mean()
-
-
 def _best_carrera_col(df):
-    for c in ["Carrera_Catalogo", "Servicio", "Programa", "Carrera"]:
+    for c in [
+        "Carrera_Catalogo",
+        "Servicio",
+        "Selecciona el programa académico que estudias",
+        "Programa",
+        "Carrera",
+    ]:
         if c in df.columns:
             return c
     return None
 
 
-def _download_button_body(df, filename):
-    if df is None or df.empty:
-        return
+def _section_from_numcol(col: str) -> str:
+    return col.split("_", 1)[0] if "_" in col else "OTR"
 
-    csv = df.to_csv(index=False).encode("utf-8-sig")
 
-    st.markdown("## ")
+def _wrap_text(s: str, width: int = 18, max_lines: int = 3) -> str:
+    if pd.isna(s):
+        return ""
+    s = str(s).strip()
+    lines = textwrap.wrap(s, width=width)
+    if len(lines) <= max_lines:
+        return "\n".join(lines)
+    kept = lines[:max_lines]
+    kept[-1] = kept[-1][:-1] + "…"
+    return "\n".join(kept)
+
+
+def _auto_classify_numcols(df, cols):
+    if not cols:
+        return [], []
+    dnum = df[cols].apply(pd.to_numeric, errors="coerce")
+    maxs = dnum.max(axis=0, skipna=True)
+    likert = [c for c in cols if c in maxs.index and pd.notna(maxs[c]) and float(maxs[c]) > 1]
+    yesno = [c for c in cols if c not in likert]
+    return likert, yesno
+
+
+def _create_excel_download(df, kpis_df, filename):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        df.to_excel(writer, sheet_name="DATA_FILTRADA", index=False)
+        if kpis_df is not None:
+            kpis_df.to_excel(writer, sheet_name="KPIS", index=False)
+    output.seek(0)
+
     st.download_button(
-        "⬇️ DESCARGAR BASE COMPLETA FILTRADA",
-        data=csv,
+        "⬇️ DESCARGAR REPORTE COMPLETO (EXCEL)",
+        data=output,
         file_name=filename,
-        mime="text/csv",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
     )
+
+
+def _download_buttons(df, filename_prefix, kpis_df=None):
+
+    st.markdown("## ")
+    st.markdown("### 📥 Exportación de información")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        csv = df.to_csv(index=False).encode("utf-8-sig")
+        st.download_button(
+            "⬇️ Descargar base completa (CSV)",
+            data=csv,
+            file_name=f"{filename_prefix}.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+    with col2:
+        _create_excel_download(
+            df,
+            kpis_df,
+            f"{filename_prefix}.xlsx"
+        )
+
     st.markdown("---")
 
 
@@ -95,7 +158,7 @@ def _load_general(url):
     def get_ws(expected_name):
         key = normalize(expected_name)
         if key not in titles:
-            raise ValueError(f"No encontré la hoja '{expected_name}'. Disponibles: {list(titles.values())}")
+            raise ValueError(f"No encontré hoja {expected_name}")
         ws = sh.worksheet(titles[key])
         data = ws.get_all_values()
         return pd.DataFrame(data[1:], columns=data[0]).replace("", pd.NA)
@@ -104,43 +167,51 @@ def _load_general(url):
     mapa = get_ws(SHEET_MAPA)
 
     return df, mapa
-
-
 def render_encuesta_calidad(vista=None, carrera=None):
 
     st.subheader("Encuesta de calidad")
-    vista = vista or "Dirección General"
+    vista = (vista or "Dirección General").strip()
 
     if vista == "Dirección Finanzas":
 
         df = _load_finanzas()
+
         if df.empty:
             st.warning("Sin datos disponibles.")
             return
 
         fecha_col = _pick_fecha_col(df)
         years = ["(Todos)"]
+
         if fecha_col:
             df[fecha_col] = _to_datetime_safe(df[fecha_col])
             years += sorted(df[fecha_col].dt.year.dropna().unique(), reverse=True)
 
         with st.sidebar:
-            year = st.selectbox("Año", years)
+            year_sel = st.selectbox("Año", years)
 
         f = df.copy()
-        if year != "(Todos)" and fecha_col:
-            f = f[f[fecha_col].dt.year == int(year)]
+        if year_sel != "(Todos)" and fecha_col:
+            f = f[f[fecha_col].dt.year == int(year_sel)]
 
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.caption(f"Registros filtrados: {len(f)}")
-        with col2:
-            _download_button_body(f, f"encuesta_finanzas_{year}.csv")
+        st.caption(f"Registros filtrados: {len(f)}")
+
+        kpis = pd.DataFrame({
+            "Indicador": ["Total registros"],
+            "Valor": [len(f)]
+        })
+
+        _download_buttons(
+            f,
+            f"encuesta_finanzas_{year_sel}",
+            kpis
+        )
 
         st.dataframe(f, use_container_width=True)
         return
 
     modalidad = "Escolarizado / Ejecutivas"
+
     if vista == "Dirección General":
         modalidad = st.sidebar.selectbox(
             "Modalidad",
@@ -155,8 +226,13 @@ def render_encuesta_calidad(vista=None, carrera=None):
 
     df, mapa = _load_general(url)
 
+    if df.empty:
+        st.warning("Sin datos disponibles.")
+        return
+
     fecha_col = _pick_fecha_col(df)
     years = ["(Todos)"]
+
     if fecha_col:
         df[fecha_col] = _to_datetime_safe(df[fecha_col])
         years += sorted(df[fecha_col].dt.year.dropna().unique(), reverse=True)
@@ -164,7 +240,7 @@ def render_encuesta_calidad(vista=None, carrera=None):
     carrera_col = _best_carrera_col(df)
 
     with st.sidebar:
-        year = st.selectbox("Año", years)
+        year_sel = st.selectbox("Año", years)
         if vista == "Dirección General" and carrera_col:
             carrera_sel = st.selectbox("Carrera", ["(Todas)"] + sorted(df[carrera_col].dropna().unique()))
         else:
@@ -172,39 +248,113 @@ def render_encuesta_calidad(vista=None, carrera=None):
 
     f = df.copy()
 
-    if year != "(Todos)" and fecha_col:
-        f = f[f[fecha_col].dt.year == int(year)]
+    if year_sel != "(Todos)" and fecha_col:
+        f = f[f[fecha_col].dt.year == int(year_sel)]
 
     if carrera_sel and carrera_sel != "(Todas)" and carrera_col:
         f = f[f[carrera_col] == carrera_sel]
 
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        st.caption(f"Registros filtrados: {len(f)}")
-    with col2:
-        _download_button_body(f, f"encuesta_{modalidad}_{year}.csv")
+    st.caption(f"Registros filtrados: {len(f)}")
+
+    numeric_cols = [c for c in f.columns if c.endswith("_num")]
+    likert_cols, yesno_cols = _auto_classify_numcols(f, numeric_cols)
+
+    promedio_global = None
+    if likert_cols:
+        promedio_global = round(pd.to_numeric(f[likert_cols].stack(), errors="coerce").mean(), 2)
+
+    pct_si = None
+    if yesno_cols:
+        pct_si = round(pd.to_numeric(f[yesno_cols].stack(), errors="coerce").mean() * 100, 1)
+
+    kpis = pd.DataFrame({
+        "Indicador": ["Total respuestas", "Promedio global Likert", "% Sí (Sí/No)"],
+        "Valor": [
+            len(f),
+            promedio_global,
+            pct_si
+        ]
+    })
+
+    _download_buttons(
+        f,
+        f"encuesta_{modalidad}_{year_sel}",
+        kpis
+    )
 
     if f.empty:
         st.warning("No hay datos con los filtros seleccionados.")
         return
 
-    numeric_cols = [c for c in f.columns if c.endswith("_num")]
-    likert_cols = [c for c in numeric_cols if pd.to_numeric(f[c], errors="coerce").max() > 1]
-    yesno_cols = [c for c in numeric_cols if c not in likert_cols]
-
-    tab1, tab2 = st.tabs(["Resumen", "Comentarios"])
+    tab1, tab2, tab3 = st.tabs(["Resumen", "Por sección", "Comentarios"])
 
     with tab1:
-        colA, colB, colC = st.columns(3)
-        colA.metric("Respuestas", len(f))
+        col1, col2, col3 = st.columns(3)
 
-        if likert_cols:
-            colB.metric("Promedio global", round(pd.to_numeric(f[likert_cols].stack(), errors="coerce").mean(), 2))
+        col1.metric("Respuestas", len(f))
 
-        if yesno_cols:
-            colC.metric("% Sí", round(pd.to_numeric(f[yesno_cols].stack(), errors="coerce").mean() * 100, 1))
+        if promedio_global is not None:
+            col2.metric("Promedio global", promedio_global)
+
+        if pct_si is not None:
+            col3.metric("% Sí", f"{pct_si}%")
 
     with tab2:
+
+        if mapa is None or mapa.empty:
+            st.info("No hay mapa configurado.")
+            return
+
+        mapa = mapa.copy()
+
+        if "section_code" not in mapa.columns:
+            mapa["section_code"] = mapa["header_num"].apply(_section_from_numcol)
+
+        mapa["section_name"] = mapa["section_code"].map(SECTION_LABELS)
+
+        mapa_ok = mapa[mapa["header_num"].isin(f.columns)]
+
+        rows = []
+
+        for (sec_code, sec_name), g in mapa_ok.groupby(["section_code", "section_name"]):
+
+            cols = [c for c in g["header_num"].tolist() if c in likert_cols]
+
+            if not cols:
+                continue
+
+            val = pd.to_numeric(f[cols].stack(), errors="coerce").mean()
+
+            if pd.isna(val):
+                continue
+
+            rows.append({
+                "Sección": sec_name,
+                "Promedio": round(val, 2)
+            })
+
+        if not rows:
+            st.info("Sin datos suficientes.")
+            return
+
+        sec_df = pd.DataFrame(rows).sort_values("Promedio", ascending=False)
+
+        st.dataframe(sec_df, use_container_width=True)
+
+        chart = (
+            alt.Chart(sec_df)
+            .mark_bar()
+            .encode(
+                x=alt.X("Sección:N", sort="-y"),
+                y="Promedio:Q",
+                tooltip=["Sección", "Promedio"]
+            )
+            .properties(height=350)
+        )
+
+        st.altair_chart(chart, use_container_width=True)
+
+    with tab3:
 
         open_cols = [c for c in f.columns if c.endswith("_txt")]
         open_cols = [c for c in open_cols if f[c].notna().any()]
@@ -220,7 +370,10 @@ def render_encuesta_calidad(vista=None, carrera=None):
 
         section_names = {sec: SECTION_LABELS.get(sec, sec) for sec in section_map}
 
-        section_sel = st.selectbox("Sección", ["(Todas)"] + list(section_names.values()))
+        section_sel = st.selectbox(
+            "Sección",
+            ["(Todas)"] + list(section_names.values())
+        )
 
         if section_sel == "(Todas)":
             cols = open_cols
@@ -228,10 +381,14 @@ def render_encuesta_calidad(vista=None, carrera=None):
             sec_code = next(k for k, v in section_names.items() if v == section_sel)
             cols = section_map[sec_code]
 
-        col_sel = st.selectbox("Campo", cols)
+        col_sel = st.selectbox("Campo de comentario", cols)
 
         textos = f[col_sel].dropna()
         textos = textos[textos.astype(str).str.strip() != ""]
 
         st.caption(f"Comentarios encontrados: {len(textos)}")
-        st.dataframe(pd.DataFrame({"Comentario": textos}), use_container_width=True)
+
+        st.dataframe(
+            pd.DataFrame({"Comentario": textos}),
+            use_container_width=True
+        )
