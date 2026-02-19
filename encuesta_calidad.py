@@ -10,27 +10,20 @@ import unicodedata
 # Etiquetas de secciones (fallback si Mapa_Preguntas no trae section_name)
 # ============================================================
 SECTION_LABELS = {
-    # Director / coordinación
     "DIR": "Director/Coordinación",
-    # Servicios generales / administrativos
     "SER": "Servicios (Administrativos/Generales)",
     "ADM": "Acceso a soporte administrativo",
-    # Académico
     "ACD": "Servicios académicos",
     "APR": "Aprendizaje",
     "EVA": "Evaluación del conocimiento",
-    # SEAC / Plataforma
     "SEAC": "Plataforma SEAC",
     "PLAT": "Plataforma SEAC",
-    "SAT": "Plataforma SEAC",  # PREPA: SAT -> SEAC
-    # Materiales / comunicación
+    "SAT": "Plataforma SEAC",
     "MAT": "Materiales en la plataforma",
     "UDL": "Comunicación con la Universidad",
     "COM": "Comunicación con compañeros",
-    # Instalaciones / ambiente
     "INS": "Instalaciones y equipo tecnológico",
     "AMB": "Ambiente escolar",
-    # Cierre
     "REC": "Recomendación / Satisfacción",
     "OTR": "Otros",
 }
@@ -41,7 +34,6 @@ MAX_VERTICAL_SECTIONS = 7
 SHEET_PROCESADO = "PROCESADO"
 SHEET_MAPA = "Mapa_Preguntas"
 SHEET_CATALOGO = "Catalogo_Servicio"  # opcional
-
 
 # ============================================================
 # DF (Finanzas) - Fuente directa (ya numérica)
@@ -89,20 +81,12 @@ def _norm_txt(x: str) -> str:
 
 
 def _is_exec_text(norm_s: str) -> bool:
-    # Señales típicas de ejecutiva en nombres (ajustable)
     return ("ejecutiva" in norm_s) or ("licenciatura ejecutiva" in norm_s) or ("lic. ejecutiva" in norm_s)
 
 
 def _strip_exec_prefix(s: str) -> str:
-    """
-    Quita SOLO el prefijo de ejecutiva para poder matchear el nombre base,
-    pero se usa únicamente cuando el target es ejecutiva.
-    """
     t = _norm_txt(s)
-    prefixes = [
-        "licenciatura ejecutiva:",
-        "lic. ejecutiva:",
-    ]
+    prefixes = ["licenciatura ejecutiva:", "lic. ejecutiva:"]
     for p in prefixes:
         if t.startswith(p):
             t = _norm_txt(t.replace(p, "", 1))
@@ -110,14 +94,8 @@ def _strip_exec_prefix(s: str) -> str:
 
 
 def _strip_generic_prefixes(s: str) -> str:
-    """
-    Quita prefijos genéricos (no ejecutiva).
-    """
     t = _norm_txt(s)
-    prefixes = [
-        "licenciatura:",
-        "lic.",
-    ]
+    prefixes = ["licenciatura:", "lic."]
     for p in prefixes:
         if t.startswith(p):
             t = _norm_txt(t.replace(p, "", 1))
@@ -126,35 +104,32 @@ def _strip_generic_prefixes(s: str) -> str:
 
 def _match_carrera_mask_dc(series: pd.Series, target_raw: str) -> pd.Series:
     """
-    Match robusto SOLO para vista DC, sin mezclar Escolarizada vs Ejecutiva.
-    Reglas:
-      - Si el target ES ejecutiva: SOLO matchea filas que también parezcan ejecutiva.
-      - Si el target NO es ejecutiva: EXCLUYE filas que parezcan ejecutiva.
-      - Primero intenta exacto normalizado; luego fallback contains.
+    Match robusto SOLO para DC, sin mezclar Escolarizada vs Ejecutiva.
+    - Si target ES ejecutiva -> solo filas que parezcan ejecutiva
+    - Si target NO es ejecutiva -> excluye filas ejecutiva
+    - Exacto normalizado primero; luego contains (con guardrails)
     """
     s_norm = series.astype(str).map(_norm_txt)
 
     t_norm = _norm_txt(target_raw)
     target_is_exec = _is_exec_text(t_norm)
 
-    # Subconjunto permitido según tipo
     if target_is_exec:
         allowed = s_norm.map(_is_exec_text)
-        t_base = _strip_exec_prefix(target_raw)  # nombre base (sin prefijo ejecutiva)
+        t_base = _strip_exec_prefix(target_raw)
     else:
         allowed = ~s_norm.map(_is_exec_text)
-        t_base = _strip_generic_prefixes(target_raw)  # evita tocar ejecutiva
+        t_base = _strip_generic_prefixes(target_raw)
 
-    # Exactos
+    # exactos
     m_exact = (s_norm == t_norm)
     if t_base and t_base != t_norm:
         m_exact = m_exact | (s_norm == t_base)
-
     m_exact = m_exact & allowed
     if m_exact.any():
         return m_exact
 
-    # Fallback contains (acotado por allowed)
+    # contains (acotado)
     m_cont = pd.Series(False, index=series.index)
     if t_norm:
         m_cont = m_cont | s_norm.str.contains(t_norm, na=False)
@@ -189,19 +164,8 @@ def _bar_chart_auto(
 
     n = len(df)
 
-    cat_axis_vertical = alt.Axis(
-        title=None,
-        labels=not hide_category_labels,
-        ticks=not hide_category_labels,
-        labelAngle=0,
-        labelLimit=0,
-    )
-    cat_axis_horizontal = alt.Axis(
-        title=None,
-        labels=not hide_category_labels,
-        ticks=not hide_category_labels,
-        labelLimit=0,
-    )
+    cat_axis_vertical = alt.Axis(title=None, labels=not hide_category_labels, ticks=not hide_category_labels, labelAngle=0, labelLimit=0)
+    cat_axis_horizontal = alt.Axis(title=None, labels=not hide_category_labels, ticks=not hide_category_labels, labelLimit=0)
 
     if n <= max_vertical:
         df["_cat_wrapped"] = df[category_col].apply(lambda x: _wrap_text(x, width=wrap_width_vertical, max_lines=3))
@@ -209,16 +173,8 @@ def _bar_chart_auto(
             alt.Chart(df)
             .mark_bar()
             .encode(
-                x=alt.X(
-                    "_cat_wrapped:N",
-                    sort=alt.SortField(field=value_col, order="descending"),
-                    axis=cat_axis_vertical,
-                ),
-                y=alt.Y(
-                    f"{value_col}:Q",
-                    scale=alt.Scale(domain=value_domain),
-                    axis=alt.Axis(title=value_title),
-                ),
+                x=alt.X("_cat_wrapped:N", sort=alt.SortField(field=value_col, order="descending"), axis=cat_axis_vertical),
+                y=alt.Y(f"{value_col}:Q", scale=alt.Scale(domain=value_domain), axis=alt.Axis(title=value_title)),
                 tooltip=tooltip_cols,
             )
             .properties(height=max(320, base_height))
@@ -231,16 +187,8 @@ def _bar_chart_auto(
         alt.Chart(df)
         .mark_bar()
         .encode(
-            y=alt.Y(
-                "_cat_wrapped:N",
-                sort=alt.SortField(field=value_col, order="descending"),
-                axis=cat_axis_horizontal,
-            ),
-            x=alt.X(
-                f"{value_col}:Q",
-                scale=alt.Scale(domain=value_domain),
-                axis=alt.Axis(title=value_title),
-            ),
+            y=alt.Y("_cat_wrapped:N", sort=alt.SortField(field=value_col, order="descending"), axis=cat_axis_horizontal),
+            x=alt.X(f"{value_col}:Q", scale=alt.Scale(domain=value_domain), axis=alt.Axis(title=value_title)),
             tooltip=tooltip_cols,
         )
         .properties(height=dynamic_height)
@@ -293,8 +241,8 @@ def _best_carrera_col(df: pd.DataFrame) -> str | None:
     candidates = [
         "Carrera_Catalogo",
         "Servicio",
-        "Selecciona el programa académico que estudias",
-        "Servicio de procedencia",
+        "Selecciona el programa académico que estudias",  # virtual
+        "Servicio de procedencia",                        # LAB escolarizados/ejecutivas
         "Programa",
         "Carrera",
     ]
@@ -310,6 +258,11 @@ def _best_carrera_col(df: pd.DataFrame) -> str | None:
 
 
 def _normalize_mapa_to_expected_schema(mapa: pd.DataFrame) -> pd.DataFrame:
+    """
+    Soporta:
+      A) header_exacto, scale_code, header_num
+      B) LAB: header_raw, header_id, tipo (LIKERT/YESNO/ABIERTA)
+    """
     m = mapa.copy()
     cols = set(m.columns)
 
@@ -333,6 +286,7 @@ def _normalize_mapa_to_expected_schema(mapa: pd.DataFrame) -> pd.DataFrame:
     hid = m["header_id"].astype(str).str.strip()
     if "tipo" in cols:
         t = m["tipo"].astype(str).str.strip().str.upper()
+        # ABIERTA -> _txt, resto -> _num
         m["header_num"] = hid + t.map({"ABIERTA": "_txt"}).fillna("_num")
     else:
         m["header_num"] = hid + "_num"
@@ -344,6 +298,11 @@ def _normalize_mapa_to_expected_schema(mapa: pd.DataFrame) -> pd.DataFrame:
 
 
 def _auto_classify_numcols(df: pd.DataFrame, cols: list[str]) -> tuple[list[str], list[str]]:
+    """
+    - max > 1 => Likert
+    - max <= 1 => Sí/No
+    Blindado contra duplicadas.
+    """
     if not cols:
         return [], []
     dnum = df[cols].apply(pd.to_numeric, errors="coerce")
@@ -382,7 +341,7 @@ def _load_from_gsheets_by_url(url: str):
 
     ws_pro = resolve(SHEET_PROCESADO)
     ws_map = resolve(SHEET_MAPA)
-    ws_cat = resolve(SHEET_CATALOGO)
+    ws_cat = resolve(SHEET_CATALOGO)  # opcional
 
     missing = []
     if not ws_pro:
@@ -627,29 +586,22 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
 
         with tab3:
             st.markdown("### Comentarios y respuestas abiertas (Finanzas)")
-
             if not open_cols:
                 st.info("No se detectaron columnas de comentarios para esta vista.")
             else:
                 col_sel = st.selectbox("Selecciona el campo a revisar", open_cols)
                 textos = f[col_sel].dropna().astype(str)
                 textos = textos[textos.str.strip() != ""]
-
                 st.caption(f"Entradas con texto: {len(textos)}")
                 st.dataframe(pd.DataFrame({col_sel: textos}), use_container_width=True)
 
         return  # ✅ DF termina aquí
 
     # ========================================================
-    # CAMINO ORIGINAL (DG / DC): PROCESADO + MAPA
+    # CAMINO DG / DC: PROCESADO + MAPA
     # ========================================================
-
     if vista == "Dirección General":
-        modalidad = st.selectbox(
-            "Modalidad",
-            ["Virtual / Mixto", "Escolarizado / Ejecutivas", "Preparatoria"],
-            index=0,
-        )
+        modalidad = st.selectbox("Modalidad", ["Virtual / Mixto", "Escolarizado / Ejecutivas", "Preparatoria"], index=0)
     else:
         modalidad = _resolver_modalidad_auto(vista, carrera)
         st.caption(f"Modalidad asignada automáticamente: **{modalidad}**")
@@ -675,17 +627,11 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
     if fecha_col:
         df[fecha_col] = _to_datetime_safe(df[fecha_col])
 
-    # ---------------------------
-    # Normalización de MAPA (soporta LAB)
-    # ---------------------------
+    # ---- Normalización MAPA (soporta LAB) ----
     mapa = _normalize_mapa_to_expected_schema(mapa)
-
     required_cols = {"header_exacto", "scale_code", "header_num"}
     if not required_cols.issubset(set(mapa.columns)):
-        st.error(
-            "La hoja 'Mapa_Preguntas' debe traer: header_exacto, scale_code, header_num "
-            "(o LAB: header_raw, header_id, tipo)."
-        )
+        st.error("La hoja 'Mapa_Preguntas' debe traer: header_exacto, scale_code, header_num (o LAB: header_raw, header_id, tipo).")
         st.caption(f"Columnas detectadas: {list(mapa.columns)}")
         return
 
@@ -708,11 +654,11 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
         mapa.loc[mask_abbrev, "section_code"].map(SECTION_LABELS).fillna(mapa.loc[mask_abbrev, "section_code"])
     )
 
-    # Solo preguntas existentes
+    # ---- Solo preguntas existentes en PROCESADO ----
     mapa["exists"] = mapa["header_num"].isin(df.columns)
     mapa_ok = mapa[mapa["exists"]].copy()
 
-    # ✅ Solo preguntas numéricas para secciones/pro
+    # ✅ CLAVE: SOLO reactivos NUMÉRICOS para Resumen/Secciones/Desglose
     mapa_ok_num = mapa_ok[
         mapa_ok["header_num"].astype(str).str.endswith("_num")
         & (mapa_ok["scale_code"].astype(str).str.upper() != "ABIERTA")
@@ -725,11 +671,10 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
         st.dataframe(df.head(30), use_container_width=True)
         return
 
+    # Clasificación Likert vs Sí/No por rango real
     likert_cols, yesno_cols = _auto_classify_numcols(df, num_cols)
 
-    # ---------------------------
-    # Filtros
-    # ---------------------------
+    # ---- Filtros ----
     years = ["(Todos)"]
     if fecha_col and df[fecha_col].notna().any():
         years += sorted(df[fecha_col].dt.year.dropna().unique().astype(int).tolist(), reverse=True)
@@ -769,9 +714,7 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
 
     st.divider()
 
-    # ---------------------------
-    # Aplicar filtros
-    # ---------------------------
+    # ---- Aplicar filtros ----
     f = df.copy()
 
     if year_sel != "(Todos)" and fecha_col:
@@ -814,7 +757,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
             mask = pd.Series(False, index=f.index)
             for c in candidates:
                 mask = mask | _match_carrera_mask_dc(f[c], target)
-
             f = f[mask]
 
     st.caption(f"Hoja usada: **PROCESADO** | Registros filtrados: **{len(f)}**")
@@ -822,18 +764,16 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
         st.warning("No hay registros con los filtros seleccionados.")
         return
 
-    # ---------------------------
-    # Tabs
-    # ---------------------------
+    # ---- Tabs ----
     if vista == "Dirección General":
         tab1, tab2, tab4, tab3 = st.tabs(["Resumen", "Por sección", "Comparativo entre carreras", "Comentarios"])
     else:
         tab1, tab2, tab3 = st.tabs(["Resumen", "Por sección", "Comentarios"])
         tab4 = None
 
-    # ---------------------------
+    # ===========================
     # Resumen
-    # ---------------------------
+    # ===========================
     with tab1:
         c1, c2, c3 = st.columns(3)
         c1.metric("Respuestas", f"{len(f)}")
@@ -918,9 +858,9 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
                 if yn_chart is not None:
                     st.altair_chart(yn_chart, use_container_width=True)
 
-    # ---------------------------
-    # Por sección
-    # ---------------------------
+    # ===========================
+    # Por sección (desglose preguntas)
+    # ===========================
     with tab2:
         st.markdown("### Desglose por sección (preguntas)")
 
@@ -1014,9 +954,9 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
                     if chart_y is not None:
                         st.altair_chart(chart_y, use_container_width=True)
 
-    # ---------------------------
+    # ===========================
     # Comparativo entre carreras (solo DG)
-    # ---------------------------
+    # ===========================
     if tab4 is not None:
         with tab4:
             st.markdown("### Comparativo entre carreras por sección")
@@ -1028,82 +968,4 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
 
             carrera_col = _best_carrera_col(f)
             if not carrera_col:
-                st.warning("No se encontró una columna válida para identificar Carrera/Servicio en PROCESADO.")
-            else:
-                if carrera_param_fija:
-                    st.info("Para ver el comparativo entre carreras, selecciona **Todos** en el selector superior (o '(Todas)' dentro del módulo).")
-                else:
-                    for (sec_code, sec_name), g in mapa_ok_num.groupby(["section_code", "section_name"]):
-                        cols = [c for c in g["header_num"].tolist() if c in f.columns and c in likert_cols]
-                        if not cols:
-                            continue
-
-                        rows = []
-                        for carrera_val, df_c in f.groupby(carrera_col):
-                            vals = pd.to_numeric(df_c[cols].stack(), errors="coerce")
-                            mean_val = vals.mean()
-                            if pd.isna(mean_val):
-                                continue
-                            rows.append({
-                                "Carrera/Servicio": str(carrera_val).strip(),
-                                "Promedio": round(float(mean_val), 2),
-                                "Respuestas": int(len(df_c)),
-                                "Preguntas": int(len(cols)),
-                            })
-
-                        if not rows:
-                            continue
-
-                        sec_comp = (
-                            pd.DataFrame(rows)
-                            .sort_values("Promedio", ascending=False)
-                            .reset_index(drop=True)
-                        )
-
-                        with st.expander(f"{sec_name}", expanded=False):
-                            st.dataframe(sec_comp, use_container_width=True)
-
-                            chart = _bar_chart_auto(
-                                df_in=sec_comp,
-                                category_col="Carrera/Servicio",
-                                value_col="Promedio",
-                                value_domain=[1, 5],
-                                value_title="Promedio",
-                                tooltip_cols=[
-                                    alt.Tooltip("Carrera/Servicio:N", title="Carrera/Servicio"),
-                                    alt.Tooltip("Promedio:Q", format=".2f"),
-                                    "Respuestas",
-                                    "Preguntas",
-                                ],
-                                max_vertical=MAX_VERTICAL_SECTIONS,
-                                wrap_width_vertical=20,
-                                wrap_width_horizontal=36,
-                                base_height=320,
-                                hide_category_labels=True,
-                            )
-                            if chart is not None:
-                                st.altair_chart(chart, use_container_width=True)
-
-    # ---------------------------
-    # Comentarios (DG/DC)
-    # ---------------------------
-    with tab3:
-        st.markdown("### Comentarios y respuestas abiertas")
-
-        open_cols = [
-            c
-            for c in f.columns
-            if (not str(c).endswith("_num"))
-            and any(k in str(c).lower() for k in ["¿por qué", "comentario", "sugerencia", "escríbelo", "escribelo", "descr"])
-        ]
-
-        if not open_cols:
-            st.info("No detecté columnas de comentarios con la heurística actual.")
-            return
-
-        col_sel = st.selectbox("Selecciona el campo a revisar", open_cols)
-        textos = f[col_sel].dropna().astype(str)
-        textos = textos[textos.str.strip() != ""]
-
-        st.caption(f"Entradas con texto: {len(textos)}")
-        st.dataframe(pd.DataFrame({col_sel: textos}), use_container_width=True)
+                st
