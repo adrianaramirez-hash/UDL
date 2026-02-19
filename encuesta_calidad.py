@@ -242,17 +242,83 @@ def _best_carrera_col(df: pd.DataFrame) -> str | None:
     return None
 
 
+def _normalize_mapa_to_expected_schema(mapa: pd.DataFrame) -> pd.DataFrame:
+    """
+    Soporta 2 formatos:
+    A) Formato esperado por la app: header_exacto, scale_code, header_num
+    B) Formato LAB: header_raw, header_id, tipo, (section_code/section_name opcionales)
+    Devuelve mapa con: header_exacto, scale_code, header_num + (section_name si existe)
+    """
+    m = mapa.copy()
+    cols = set(m.columns)
+
+    # Si ya viene en el formato esperado, no tocar de más
+    if {"header_exacto", "scale_code", "header_num"}.issubset(cols):
+        m["header_exacto"] = m["header_exacto"].astype(str).str.strip()
+        m["scale_code"] = m["scale_code"].astype(str).str.strip()
+        m["header_num"] = m["header_num"].astype(str).str.strip()
+        return m
+
+    # Intentar convertir desde LAB
+    # Requeridos mínimos LAB
+    if not {"header_raw", "header_id"}.issubset(cols):
+        # No puedo inferir; deja que falle con error claro
+        return m
+
+    # header_exacto
+    m["header_exacto"] = m["header_raw"].astype(str).str.strip()
+
+    # scale_code (no lo usas para calcular, pero tu validación lo requiere)
+    # Si hay "tipo": LIKERT / YESNO / ABIERTA
+    if "tipo" in cols:
+        t = m["tipo"].astype(str).str.strip().str.upper()
+        # mapea a códigos genéricos
+        m["scale_code"] = t.map({
+            "LIKERT": "LIKERT_1_5",
+            "YESNO": "YESNO_0_1",
+            "ABIERTA": "ABIERTA",
+        }).fillna(t)
+    else:
+        m["scale_code"] = "LIKERT_1_5"
+
+    # header_num: para LIKERT/YESNO => _num; para ABIERTA => _txt
+    hid = m["header_id"].astype(str).str.strip()
+    if "tipo" in cols:
+        t = m["tipo"].astype(str).str.strip().str.upper()
+        m["header_num"] = hid + t.map({"ABIERTA": "_txt"}).fillna("_num")
+    else:
+        m["header_num"] = hid + "_num"
+
+    # Deja section_name si existe (tu lógica posterior la usa/ajusta)
+    if "section_name" in cols:
+        m["section_name"] = m["section_name"].fillna("").astype(str).str.strip()
+
+    return m
+
+
 def _auto_classify_numcols(df: pd.DataFrame, cols: list[str]) -> tuple[list[str], list[str]]:
     """
     Clasifica columnas numéricas por rango real de valores:
       - max > 1  => Likert (1–5)
       - max <= 1 => Sí/No (0/1)
+    Blindado contra columnas duplicadas.
     """
     if not cols:
         return [], []
     dnum = df[cols].apply(pd.to_numeric, errors="coerce")
+
+    # ✅ evita error por headers duplicados (truth value of Series ambiguous, etc.)
+    dnum = dnum.loc[:, ~dnum.columns.duplicated()]
+
     maxs = dnum.max(axis=0, skipna=True)
-    likert_cols = [c for c in cols if pd.notna(maxs.get(c)) and float(maxs.get(c)) > 1.0]
+    likert_cols = []
+    for c in cols:
+        if c not in maxs.index:
+            continue
+        v = maxs.loc[c]
+        if pd.notna(v) and float(v) > 1.0:
+            likert_cols.append(c)
+
     yesno_cols = [c for c in cols if c not in likert_cols]
     return likert_cols, yesno_cols
 
@@ -595,16 +661,20 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
         df[fecha_col] = _to_datetime_safe(df[fecha_col])
 
     # ---------------------------
-    # Validación mapa
+    # ✅ Normalización de MAPA (soporta LAB)
     # ---------------------------
+    mapa = _normalize_mapa_to_expected_schema(mapa)
+
     required_cols = {"header_exacto", "scale_code", "header_num"}
     if not required_cols.issubset(set(mapa.columns)):
-        st.error("La hoja 'Mapa_Preguntas' debe traer: header_exacto, scale_code, header_num.")
+        st.error("La hoja 'Mapa_Preguntas' debe traer: header_exacto, scale_code, header_num (o LAB: header_raw, header_id, tipo).")
+        st.caption(f"Columnas detectadas: {list(mapa.columns)}")
         return
 
     mapa = mapa.copy()
     mapa["header_num"] = mapa["header_num"].astype(str).str.strip()
     mapa["scale_code"] = mapa["scale_code"].astype(str).str.strip()
+    mapa["header_exacto"] = mapa["header_exacto"].astype(str).str.strip()
 
     mapa["section_code"] = mapa["header_num"].apply(_section_from_numcol)
 
