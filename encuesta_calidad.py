@@ -312,36 +312,8 @@ def render_encuesta_calidad(vista=None, carrera=None):
 
         mapa["section_name"] = mapa["section_code"].map(SECTION_LABELS)
 
-# --- Normalizar MAPA si viene en formato LAB ---
-if "header_num" not in mapa.columns:
+        mapa_ok = mapa[mapa["header_num"].isin(f.columns)]
 
-    if {"header_raw", "header_id", "tipo"}.issubset(set(mapa.columns)):
-
-        mapa = mapa.copy()
-        mapa["header_exacto"] = mapa["header_raw"].astype(str).str.strip()
-
-        mapa["scale_code"] = (
-            mapa["tipo"]
-            .astype(str)
-            .str.upper()
-            .map({
-                "LIKERT": "LIKERT_1_5",
-                "YESNO": "YESNO_0_1",
-                "ABIERTA": "ABIERTA"
-            })
-        )
-
-        mapa["header_num"] = mapa["header_id"].astype(str).str.strip() + \
-            mapa["tipo"].astype(str).str.upper().map({
-                "ABIERTA": "_txt"
-            }).fillna("_num")
-
-    else:
-        st.error("La hoja MAPA_PREGUNTAS no tiene estructura válida.")
-        return
-
-# --- Ahora sí usar header_num ---
-mapa_ok = mapa[mapa["header_num"].isin(f.columns)]
         rows = []
 
         for (sec_code, sec_name), g in mapa_ok.groupby(["section_code", "section_name"]):
