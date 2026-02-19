@@ -54,17 +54,21 @@ def _best_carrera_col(df):
     return None
 
 
-def _download_button(df, filename):
-    if df.empty:
+def _download_button_body(df, filename):
+    if df is None or df.empty:
         return
+
     csv = df.to_csv(index=False).encode("utf-8-sig")
+
+    st.markdown("## ")
     st.download_button(
-        "⬇️ Descargar dataset filtrado (CSV)",
+        "⬇️ DESCARGAR BASE COMPLETA FILTRADA",
         data=csv,
         file_name=filename,
         mime="text/csv",
         use_container_width=True,
     )
+    st.markdown("---")
 
 
 @st.cache_data(ttl=300)
@@ -83,12 +87,23 @@ def _load_general(url):
     gc = gspread.service_account_from_dict(sa)
     sh = gc.open_by_url(url)
 
-    def ws_df(name):
-        ws = sh.worksheet(name)
+    def normalize(x):
+        return str(x).strip().lower().replace(" ", "").replace("_", "")
+
+    titles = {normalize(ws.title): ws.title for ws in sh.worksheets()}
+
+    def get_ws(expected_name):
+        key = normalize(expected_name)
+        if key not in titles:
+            raise ValueError(f"No encontré la hoja '{expected_name}'. Disponibles: {list(titles.values())}")
+        ws = sh.worksheet(titles[key])
         data = ws.get_all_values()
         return pd.DataFrame(data[1:], columns=data[0]).replace("", pd.NA)
 
-    return ws_df(SHEET_PROCESADO), ws_df(SHEET_MAPA)
+    df = get_ws(SHEET_PROCESADO)
+    mapa = get_ws(SHEET_MAPA)
+
+    return df, mapa
 
 
 def render_encuesta_calidad(vista=None, carrera=None):
@@ -104,11 +119,10 @@ def render_encuesta_calidad(vista=None, carrera=None):
             return
 
         fecha_col = _pick_fecha_col(df)
+        years = ["(Todos)"]
         if fecha_col:
             df[fecha_col] = _to_datetime_safe(df[fecha_col])
-            years = ["(Todos)"] + sorted(df[fecha_col].dt.year.dropna().unique(), reverse=True)
-        else:
-            years = ["(Todos)"]
+            years += sorted(df[fecha_col].dt.year.dropna().unique(), reverse=True)
 
         with st.sidebar:
             year = st.selectbox("Año", years)
@@ -121,7 +135,7 @@ def render_encuesta_calidad(vista=None, carrera=None):
         with col1:
             st.caption(f"Registros filtrados: {len(f)}")
         with col2:
-            _download_button(f, f"encuesta_finanzas_{year}.csv")
+            _download_button_body(f, f"encuesta_finanzas_{year}.csv")
 
         st.dataframe(f, use_container_width=True)
         return
@@ -142,11 +156,10 @@ def render_encuesta_calidad(vista=None, carrera=None):
     df, mapa = _load_general(url)
 
     fecha_col = _pick_fecha_col(df)
+    years = ["(Todos)"]
     if fecha_col:
         df[fecha_col] = _to_datetime_safe(df[fecha_col])
-        years = ["(Todos)"] + sorted(df[fecha_col].dt.year.dropna().unique(), reverse=True)
-    else:
-        years = ["(Todos)"]
+        years += sorted(df[fecha_col].dt.year.dropna().unique(), reverse=True)
 
     carrera_col = _best_carrera_col(df)
 
@@ -169,7 +182,7 @@ def render_encuesta_calidad(vista=None, carrera=None):
     with col1:
         st.caption(f"Registros filtrados: {len(f)}")
     with col2:
-        _download_button(f, f"encuesta_{modalidad}_{year}.csv")
+        _download_button_body(f, f"encuesta_{modalidad}_{year}.csv")
 
     if f.empty:
         st.warning("No hay datos con los filtros seleccionados.")
@@ -205,20 +218,14 @@ def render_encuesta_calidad(vista=None, carrera=None):
             sec = col.split("_")[0]
             section_map.setdefault(sec, []).append(col)
 
-        section_names = {
-            sec: SECTION_LABELS.get(sec, sec)
-            for sec in section_map
-        }
+        section_names = {sec: SECTION_LABELS.get(sec, sec) for sec in section_map}
 
-        section_sel = st.selectbox(
-            "Sección",
-            ["(Todas)"] + list(section_names.values())
-        )
+        section_sel = st.selectbox("Sección", ["(Todas)"] + list(section_names.values()))
 
         if section_sel == "(Todas)":
             cols = open_cols
         else:
-            sec_code = [k for k, v in section_names.items() if v == section_sel][0]
+            sec_code = next(k for k, v in section_names.items() if v == section_sel)
             cols = section_map[sec_code]
 
         col_sel = st.selectbox("Campo", cols)
