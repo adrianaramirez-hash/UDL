@@ -88,11 +88,33 @@ def _norm_txt(x: str) -> str:
     return s
 
 
-def _strip_prefixes(s: str) -> str:
+def _is_exec_text(norm_s: str) -> bool:
+    # Señales típicas de ejecutiva en nombres (ajustable)
+    return ("ejecutiva" in norm_s) or ("licenciatura ejecutiva" in norm_s) or ("lic. ejecutiva" in norm_s)
+
+
+def _strip_exec_prefix(s: str) -> str:
+    """
+    Quita SOLO el prefijo de ejecutiva para poder matchear el nombre base,
+    pero se usa únicamente cuando el target es ejecutiva.
+    """
     t = _norm_txt(s)
     prefixes = [
         "licenciatura ejecutiva:",
         "lic. ejecutiva:",
+    ]
+    for p in prefixes:
+        if t.startswith(p):
+            t = _norm_txt(t.replace(p, "", 1))
+    return t
+
+
+def _strip_generic_prefixes(s: str) -> str:
+    """
+    Quita prefijos genéricos (no ejecutiva).
+    """
+    t = _norm_txt(s)
+    prefixes = [
         "licenciatura:",
         "lic.",
     ]
@@ -102,27 +124,44 @@ def _strip_prefixes(s: str) -> str:
     return t
 
 
-def _match_carrera_mask(series: pd.Series, target_raw: str) -> pd.Series:
+def _match_carrera_mask_dc(series: pd.Series, target_raw: str) -> pd.Series:
     """
-    Match robusto:
-    1) exacto normalizado (con y sin prefijos)
-    2) fallback: contains normalizado (con y sin prefijos)
+    Match robusto SOLO para vista DC, sin mezclar Escolarizada vs Ejecutiva.
+    Reglas:
+      - Si el target ES ejecutiva: SOLO matchea filas que también parezcan ejecutiva.
+      - Si el target NO es ejecutiva: EXCLUYE filas que parezcan ejecutiva.
+      - Primero intenta exacto normalizado; luego fallback contains.
     """
     s_norm = series.astype(str).map(_norm_txt)
-    t1 = _norm_txt(target_raw)
-    t2 = _strip_prefixes(target_raw)
 
-    m_exact = (s_norm == t1) | (s_norm == t2)
+    t_norm = _norm_txt(target_raw)
+    target_is_exec = _is_exec_text(t_norm)
+
+    # Subconjunto permitido según tipo
+    if target_is_exec:
+        allowed = s_norm.map(_is_exec_text)
+        t_base = _strip_exec_prefix(target_raw)  # nombre base (sin prefijo ejecutiva)
+    else:
+        allowed = ~s_norm.map(_is_exec_text)
+        t_base = _strip_generic_prefixes(target_raw)  # evita tocar ejecutiva
+
+    # Exactos
+    m_exact = (s_norm == t_norm)
+    if t_base and t_base != t_norm:
+        m_exact = m_exact | (s_norm == t_base)
+
+    m_exact = m_exact & allowed
     if m_exact.any():
         return m_exact
 
+    # Fallback contains (acotado por allowed)
     m_cont = pd.Series(False, index=series.index)
-    if t1:
-        m_cont = m_cont | s_norm.str.contains(t1, na=False)
-    if t2 and t2 != t1:
-        m_cont = m_cont | s_norm.str.contains(t2, na=False)
+    if t_norm:
+        m_cont = m_cont | s_norm.str.contains(t_norm, na=False)
+    if t_base and t_base != t_norm:
+        m_cont = m_cont | s_norm.str.contains(t_base, na=False)
 
-    return m_cont
+    return m_cont & allowed
 
 
 def _bar_chart_auto(
@@ -139,11 +178,6 @@ def _bar_chart_auto(
     base_height: int = 260,
     hide_category_labels: bool = True,
 ):
-    """
-    - Si el número de categorías es pequeño, muestra barras verticales.
-    - Si es grande, muestra barras horizontales con altura dinámica.
-    - Wrapping del texto para evitar etiquetas truncadas.
-    """
     if df_in is None or df_in.empty:
         return None
 
@@ -169,11 +203,8 @@ def _bar_chart_auto(
         labelLimit=0,
     )
 
-    # Vertical
     if n <= max_vertical:
-        df["_cat_wrapped"] = df[category_col].apply(
-            lambda x: _wrap_text(x, width=wrap_width_vertical, max_lines=3)
-        )
+        df["_cat_wrapped"] = df[category_col].apply(lambda x: _wrap_text(x, width=wrap_width_vertical, max_lines=3))
         return (
             alt.Chart(df)
             .mark_bar()
@@ -193,10 +224,7 @@ def _bar_chart_auto(
             .properties(height=max(320, base_height))
         )
 
-    # Horizontal
-    df["_cat_wrapped"] = df[category_col].apply(
-        lambda x: _wrap_text(x, width=wrap_width_horizontal, max_lines=3)
-    )
+    df["_cat_wrapped"] = df[category_col].apply(lambda x: _wrap_text(x, width=wrap_width_horizontal, max_lines=3))
     dynamic_height = max(base_height, n * height_per_row)
 
     return (
@@ -251,11 +279,6 @@ def _get_url_for_modalidad(modalidad: str) -> str:
 
 
 def _resolver_modalidad_auto(vista: str, carrera: str | None) -> str:
-    """
-    Mantiene comportamiento original, pero compatible con app.py:
-    - DG: modalidad la elige el usuario (retorna "")
-    - DC: intenta inferir modalidad a partir de carrera
-    """
     if vista == "Dirección General":
         return ""
     c = (carrera or "").strip().lower()
@@ -267,14 +290,11 @@ def _resolver_modalidad_auto(vista: str, carrera: str | None) -> str:
 
 
 def _best_carrera_col(df: pd.DataFrame) -> str | None:
-    """
-    Para Dirección General: elegir una sola columna para filtrar Carrera/Servicio.
-    """
     candidates = [
         "Carrera_Catalogo",
         "Servicio",
-        "Selecciona el programa académico que estudias",  # Virtual típico
-        "Servicio de procedencia",                        # Escolar típico (LAB)
+        "Selecciona el programa académico que estudias",
+        "Servicio de procedencia",
         "Programa",
         "Carrera",
     ]
@@ -290,23 +310,15 @@ def _best_carrera_col(df: pd.DataFrame) -> str | None:
 
 
 def _normalize_mapa_to_expected_schema(mapa: pd.DataFrame) -> pd.DataFrame:
-    """
-    Soporta 2 formatos:
-    A) Formato esperado por la app: header_exacto, scale_code, header_num
-    B) Formato LAB: header_raw, header_id, tipo, (section_code/section_name opcionales)
-    Devuelve mapa con: header_exacto, scale_code, header_num + (section_name si existe)
-    """
     m = mapa.copy()
     cols = set(m.columns)
 
-    # Formato esperado
     if {"header_exacto", "scale_code", "header_num"}.issubset(cols):
         m["header_exacto"] = m["header_exacto"].astype(str).str.strip()
         m["scale_code"] = m["scale_code"].astype(str).str.strip()
         m["header_num"] = m["header_num"].astype(str).str.strip()
         return m
 
-    # Convertir desde LAB
     if not {"header_raw", "header_id"}.issubset(cols):
         return m
 
@@ -314,11 +326,7 @@ def _normalize_mapa_to_expected_schema(mapa: pd.DataFrame) -> pd.DataFrame:
 
     if "tipo" in cols:
         t = m["tipo"].astype(str).str.strip().str.upper()
-        m["scale_code"] = t.map({
-            "LIKERT": "LIKERT_1_5",
-            "YESNO": "YESNO_0_1",
-            "ABIERTA": "ABIERTA",
-        }).fillna(t)
+        m["scale_code"] = t.map({"LIKERT": "LIKERT_1_5", "YESNO": "YESNO_0_1", "ABIERTA": "ABIERTA"}).fillna(t)
     else:
         m["scale_code"] = "LIKERT_1_5"
 
@@ -336,17 +344,10 @@ def _normalize_mapa_to_expected_schema(mapa: pd.DataFrame) -> pd.DataFrame:
 
 
 def _auto_classify_numcols(df: pd.DataFrame, cols: list[str]) -> tuple[list[str], list[str]]:
-    """
-    Clasifica columnas numéricas por rango real de valores:
-      - max > 1  => Likert (1–5)
-      - max <= 1 => Sí/No (0/1)
-    Blindado contra columnas duplicadas.
-    """
     if not cols:
         return [], []
     dnum = df[cols].apply(pd.to_numeric, errors="coerce")
-    dnum = dnum.loc[:, ~dnum.columns.duplicated()]  # evita duplicados
-
+    dnum = dnum.loc[:, ~dnum.columns.duplicated()]
     maxs = dnum.max(axis=0, skipna=True)
 
     likert_cols = []
@@ -381,7 +382,7 @@ def _load_from_gsheets_by_url(url: str):
 
     ws_pro = resolve(SHEET_PROCESADO)
     ws_map = resolve(SHEET_MAPA)
-    ws_cat = resolve(SHEET_CATALOGO)  # opcional
+    ws_cat = resolve(SHEET_CATALOGO)
 
     missing = []
     if not ws_pro:
@@ -435,13 +436,8 @@ def _load_finanzas_num():
 # Render principal
 # ============================================================
 def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None):
-    """
-    DG/DC: usa PROCESADO + Mapa_Preguntas (comportamiento original).
-    DF: usa VISTA_FINANZAS_NUM (ya numérica) + incluye Comentarios.
-    """
     st.subheader("Encuesta de calidad")
 
-    # Normalizar vista
     if not vista:
         vista = "Dirección General"
     vista = str(vista).strip()
@@ -464,7 +460,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
             st.warning("La hoja VISTA_FINANZAS_NUM está vacía.")
             return
 
-        # Fecha
         fecha_col = _pick_fecha_col(df)
         if fecha_col:
             df[fecha_col] = _to_datetime_safe(df[fecha_col])
@@ -489,13 +484,11 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
             st.warning("No hay registros con los filtros seleccionados.")
             return
 
-        # Columnas abiertas (comentarios/por qué)
         open_cols = [
             c for c in f.columns
             if any(k in str(c).lower() for k in ["¿por qué", "por qué", "comentario", "sugerencia", "escríbelo", "escribelo"])
         ]
 
-        # Detectar columnas numéricas candidatas (excluir timestamp/programa y abiertas)
         base_exclude = set()
         for c in ["Marca temporal", "Marca Temporal", "Selecciona el programa académico que estudias"]:
             if c in f.columns:
@@ -520,9 +513,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
 
         tab1, tab2, tab3 = st.tabs(["Resumen", "Por pregunta", "Comentarios"])
 
-        # ---------------------------
-        # Resumen (DF)
-        # ---------------------------
         with tab1:
             c1, c2, c3 = st.columns(3)
             c1.metric("Respuestas", f"{len(f)}")
@@ -602,9 +592,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
                 else:
                     st.info("Sin datos Sí/No suficientes con los filtros actuales.")
 
-        # ---------------------------
-        # Por pregunta (DF)
-        # ---------------------------
         with tab2:
             st.markdown("### Detalle por pregunta")
             tipo_sel = st.radio("Tipo", ["Likert (1–5)", "Sí/No (0–1)"], horizontal=True)
@@ -638,9 +625,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
                 )
                 st.altair_chart(ch, use_container_width=True)
 
-        # ---------------------------
-        # Comentarios (DF)
-        # ---------------------------
         with tab3:
             st.markdown("### Comentarios y respuestas abiertas (Finanzas)")
 
@@ -660,9 +644,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
     # CAMINO ORIGINAL (DG / DC): PROCESADO + MAPA
     # ========================================================
 
-    # ---------------------------
-    # Selección de modalidad
-    # ---------------------------
     if vista == "Dirección General":
         modalidad = st.selectbox(
             "Modalidad",
@@ -675,9 +656,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
 
     url = _get_url_for_modalidad(modalidad)
 
-    # ---------------------------
-    # Carga
-    # ---------------------------
     try:
         with st.spinner("Cargando datos (Google Sheets)…"):
             df, mapa, _catalogo = _load_from_gsheets_by_url(url)
@@ -693,7 +671,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
     if modalidad == "Preparatoria":
         df = _ensure_prepa_columns(df)
 
-    # Fecha
     fecha_col = _pick_fecha_col(df)
     if fecha_col:
         df[fecha_col] = _to_datetime_safe(df[fecha_col])
@@ -735,6 +712,12 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
     mapa["exists"] = mapa["header_num"].isin(df.columns)
     mapa_ok = mapa[mapa["exists"]].copy()
 
+    # ✅ Solo preguntas numéricas para secciones/pro
+    mapa_ok_num = mapa_ok[
+        mapa_ok["header_num"].astype(str).str.endswith("_num")
+        & (mapa_ok["scale_code"].astype(str).str.upper() != "ABIERTA")
+    ].copy()
+
     # Columnas numéricas *_num
     num_cols = [c for c in df.columns if str(c).endswith("_num")]
     if not num_cols:
@@ -742,7 +725,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
         st.dataframe(df.head(30), use_container_width=True)
         return
 
-    # Clasificación Likert vs Sí/No por rango real
     likert_cols, yesno_cols = _auto_classify_numcols(df, num_cols)
 
     # ---------------------------
@@ -812,7 +794,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
                 f = f[f[carrera_col].astype(str).str.strip() == str(carrera_sel).strip()]
     else:
         if modalidad != "Preparatoria":
-            # ✅ FIX DC: incluye columnas LAB + match robusto (sin acentos/prefijos) + fallback contains
             candidates = [
                 c for c in [
                     "Carrera_Catalogo",
@@ -832,7 +813,7 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
             target = str(carrera_sel).strip()
             mask = pd.Series(False, index=f.index)
             for c in candidates:
-                mask = mask | _match_carrera_mask(f[c], target)
+                mask = mask | _match_carrera_mask_dc(f[c], target)
 
             f = f[mask]
 
@@ -873,7 +854,7 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
         st.markdown("### Promedio por sección (Likert)")
 
         rows = []
-        for (sec_code, sec_name), g in mapa_ok.groupby(["section_code", "section_name"]):
+        for (sec_code, sec_name), g in mapa_ok_num.groupby(["section_code", "section_name"]):
             cols = [c for c in g["header_num"].tolist() if c in f.columns and c in likert_cols]
             if not cols:
                 continue
@@ -909,7 +890,7 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
             st.markdown("### Sí/No (por pregunta) — % Sí")
 
             yn_rows = []
-            for _, m in mapa_ok.iterrows():
+            for _, m in mapa_ok_num.iterrows():
                 col = m["header_num"]
                 if col not in yesno_cols or col not in f.columns:
                     continue
@@ -944,7 +925,7 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
         st.markdown("### Desglose por sección (preguntas)")
 
         rows = []
-        for (sec_code, sec_name), g in mapa_ok.groupby(["section_code", "section_name"]):
+        for (sec_code, sec_name), g in mapa_ok_num.groupby(["section_code", "section_name"]):
             cols = [c for c in g["header_num"].tolist() if c in f.columns and c in likert_cols]
             if not cols:
                 continue
@@ -965,7 +946,7 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
             sec_avg = r["Promedio"]
 
             with st.expander(f"{sec_name} — Promedio: {sec_avg:.2f}", expanded=False):
-                mm = mapa_ok[mapa_ok["section_code"] == sec_code].copy()
+                mm = mapa_ok_num[mapa_ok_num["section_code"] == sec_code].copy()
 
                 qrows = []
                 for _, m in mm.iterrows():
@@ -1052,7 +1033,7 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
                 if carrera_param_fija:
                     st.info("Para ver el comparativo entre carreras, selecciona **Todos** en el selector superior (o '(Todas)' dentro del módulo).")
                 else:
-                    for (sec_code, sec_name), g in mapa_ok.groupby(["section_code", "section_name"]):
+                    for (sec_code, sec_name), g in mapa_ok_num.groupby(["section_code", "section_name"]):
                         cols = [c for c in g["header_num"].tolist() if c in f.columns and c in likert_cols]
                         if not cols:
                             continue
