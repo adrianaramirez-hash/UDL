@@ -184,14 +184,12 @@ def _normalize_mapa_to_expected_schema(mapa: pd.DataFrame) -> pd.DataFrame:
     m = mapa.copy()
     cols = set(m.columns)
 
-    # Nuevo schema
     if {"header_exacto", "scale_code", "header_num"}.issubset(cols):
         m["header_exacto"] = m["header_exacto"].astype(str).str.strip()
         m["scale_code"] = m["scale_code"].astype(str).str.strip()
         m["header_num"] = m["header_num"].astype(str).str.strip()
         return m
 
-    # LAB schema -> convertir
     if {"header_raw", "header_id"}.issubset(cols):
         m["header_exacto"] = m["header_raw"].astype(str).str.strip()
 
@@ -305,8 +303,9 @@ def _bar_chart_auto(
         return None
 
     df = df_in.copy()
-    df[value_col] = pd.to_numeric(df[value_col], errors="coerce")
-    df = df.dropna(subset=[value_col])
+    df["__cat"] = df[category_col].astype(str)
+    df["__val"] = pd.to_numeric(df[value_col], errors="coerce")
+    df = df.dropna(subset=["__val"])
     if df.empty:
         return None
 
@@ -315,27 +314,27 @@ def _bar_chart_auto(
     cat_axis_horizontal = alt.Axis(title=None, labels=not hide_category_labels, ticks=not hide_category_labels, labelLimit=0)
 
     if n <= max_vertical:
-        df["_cat_wrapped"] = df[category_col].apply(lambda x: _wrap_text(x, width=wrap_width_vertical, max_lines=3))
+        df["_cat_wrapped"] = df["__cat"].apply(lambda x: _wrap_text(x, width=wrap_width_vertical, max_lines=3))
         return (
             alt.Chart(df)
             .mark_bar()
             .encode(
-                x=alt.X("_cat_wrapped:N", sort=alt.SortField(field=value_col, order="descending"), axis=cat_axis_vertical),
-                y=alt.Y(f"{value_col}:Q", scale=alt.Scale(domain=value_domain), axis=alt.Axis(title=value_title)),
+                x=alt.X("_cat_wrapped:N", sort=alt.SortField(field="__val", order="descending"), axis=cat_axis_vertical),
+                y=alt.Y("__val:Q", scale=alt.Scale(domain=value_domain), axis=alt.Axis(title=value_title)),
                 tooltip=tooltip_cols,
             )
             .properties(height=max(320, base_height))
         )
 
-    df["_cat_wrapped"] = df[category_col].apply(lambda x: _wrap_text(x, width=wrap_width_horizontal, max_lines=3))
+    df["_cat_wrapped"] = df["__cat"].apply(lambda x: _wrap_text(x, width=wrap_width_horizontal, max_lines=3))
     dynamic_height = max(base_height, n * height_per_row)
 
     return (
         alt.Chart(df)
         .mark_bar()
         .encode(
-            y=alt.Y("_cat_wrapped:N", sort=alt.SortField(field=value_col, order="descending"), axis=cat_axis_horizontal),
-            x=alt.X(f"{value_col}:Q", scale=alt.Scale(domain=value_domain), axis=alt.Axis(title=value_title)),
+            y=alt.Y("_cat_wrapped:N", sort=alt.SortField(field="__val", order="descending"), axis=cat_axis_horizontal),
+            x=alt.X("__val:Q", scale=alt.Scale(domain=value_domain), axis=alt.Axis(title=value_title)),
             tooltip=tooltip_cols,
         )
         .properties(height=dynamic_height)
@@ -440,9 +439,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
     st.subheader("Encuesta de calidad")
     vista = (vista or "Dirección General").strip()
 
-    # =========================
-    # VISTA FINANZAS
-    # =========================
     if vista == "Dirección Finanzas":
         st.caption("Vista restringida para Dirección de Finanzas (solo datos administrativos autorizados).")
         try:
@@ -475,11 +471,7 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
         if year_sel != "(Todos)" and fecha_col:
             f = f[f[fecha_col].dt.year == int(year_sel)]
 
-        # KPIs finanzas (simple)
-        kpis = pd.DataFrame({
-            "Indicador": ["Respuestas"],
-            "Valor": [len(f)]
-        })
+        kpis = pd.DataFrame({"Indicador": ["Respuestas"], "Valor": [len(f)]})
 
         _download_buttons_body(
             f,
@@ -495,9 +487,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
         st.dataframe(f, use_container_width=True)
         return
 
-    # =========================
-    # VISTA GENERAL / DIRECTORES
-    # =========================
     modalidad = _resolver_modalidad_auto(vista, carrera) if vista != "Dirección General" else None
 
     with st.sidebar:
@@ -549,7 +538,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
     else:
         mapa["section_code"] = mapa["header_num"].apply(_section_from_numcol)
 
-    # Nombre de sección SIEMPRE completo (sin claves)
     mapa["section_name"] = mapa.get("section_name", pd.Series([""] * len(mapa))).fillna("").astype(str).str.strip()
     mask_abbrev = (mapa["section_name"] == "") | (mapa["section_name"] == mapa["section_code"]) | (mapa["section_name"].str.len() <= 4)
     mapa.loc[mask_abbrev, "section_name"] = mapa.loc[mask_abbrev, "section_code"].map(SECTION_LABELS).fillna(mapa.loc[mask_abbrev, "section_code"])
@@ -602,9 +590,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
 
         st.divider()
 
-    # =========================
-    # APLICAR FILTROS
-    # =========================
     f = df.copy()
 
     if year_sel != "(Todos)" and fecha_col:
@@ -647,9 +632,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
                 mask = mask | _match_carrera_mask_dc(f[c], target)
             f = f[mask]
 
-    # =========================
-    # KPIs + EXPORTACIÓN EN BODY
-    # =========================
     filename_prefix = f"encuesta_calidad_{str(modalidad).replace('/','-').replace(' ','_')}_{year_sel if year_sel!='(Todos)' else 'TODOS'}"
     if vista == "Dirección General":
         filename_prefix += f"_{(carrera_sel if carrera_sel!='(Todas)' else 'TODAS')}"
@@ -677,18 +659,12 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
         st.warning("No hay registros con los filtros seleccionados.")
         return
 
-    # =========================
-    # TABS
-    # =========================
     if vista == "Dirección General":
         tab1, tab2, tab4, tab3 = st.tabs(["Resumen", "Por sección", "Comparativo entre carreras", "Comentarios"])
     else:
         tab1, tab2, tab3 = st.tabs(["Resumen", "Por sección", "Comentarios"])
         tab4 = None
 
-    # =========================
-    # TAB 1: RESUMEN
-    # =========================
     with tab1:
         c1, c2, c3 = st.columns(3)
         c1.metric("Respuestas", f"{len(f)}")
@@ -756,9 +732,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
             if not yn_df.empty:
                 st.dataframe(yn_df, use_container_width=True)
 
-    # =========================
-    # TAB 2: POR SECCIÓN (DETALLE)
-    # =========================
     with tab2:
         st.markdown("### Desglose por sección (preguntas)")
 
@@ -848,7 +821,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
                         if chart_y is not None:
                             st.altair_chart(chart_y, use_container_width=True)
 
-                # Comentarios por sección con buscador (tipo Sheets)
                 items_sec = [(sec, lbl, col) for (sec, lbl, col) in open_items_all if sec == sec_code and col in f.columns]
                 _render_open_comments_box(
                     f=f,
@@ -858,9 +830,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
                     key_prefix="open_sec",
                 )
 
-    # =========================
-    # TAB 4: COMPARATIVO (DG)
-    # =========================
     if tab4 is not None:
         with tab4:
             st.markdown("### Comparativo entre carreras por sección")
@@ -915,9 +884,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
                         if chart is not None:
                             st.altair_chart(chart, use_container_width=True)
 
-    # =========================
-    # TAB 3: COMENTARIOS (GLOBAL)
-    # =========================
     with tab3:
         st.markdown("### Comentarios y respuestas abiertas")
 
@@ -928,7 +894,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
         sec_codes = sorted({sec for (sec, _, _) in open_items_all})
         sec_map_name = {code: SECTION_LABELS.get(code, code) for code in sec_codes}
 
-        # Solo nombres completos (sin claves)
         opts = ["(Todas)"] + [sec_map_name.get(code, code) for code in sec_codes]
         sec_sel = st.selectbox("Sección", opts, index=0)
 
@@ -958,7 +923,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
         textos = f[sel_col].dropna().astype(str)
         textos = textos[textos.str.strip() != ""]
 
-        # Buscador tipo Sheets (keyword)
         if (not ver_todos) and q.strip():
             qn = q.strip().lower()
             textos = textos[textos.str.lower().str.contains(qn, na=False)]
