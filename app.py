@@ -9,6 +9,14 @@ import indice_reprobacion  # ✅ NUEVO
 import evaluacion_docente  # ✅ NUEVO (módulo Evaluación docente)
 from examenes_departamentales import render_examenes_departamentales
 
+# ✅ NUEVO: import defensivo del módulo Encuesta de calidad_F (DF-only)
+try:
+    import encuesta_calidad_f  # archivo nuevo: encuesta_calidad_f.py
+    HAS_EC_F_MOD = True
+except Exception:
+    encuesta_calidad_f = None
+    HAS_EC_F_MOD = False
+
 # ✅ NUEVO: import defensivo del módulo de Bajas/Retención
 try:
     import bajas_retencion  # este archivo lo crearás después
@@ -59,6 +67,9 @@ SCOPES = [
 # ============================================================
 MOD_KEY_BY_SECCION = {
     "Encuesta de calidad": "encuesta_calidad",
+    # ✅ NUEVO
+    "Encuesta de calidad_F": "encuesta_calidad_f",
+
     "Observación de clases": "observacion_clases",
     "Evaluación docente": "evaluacion_docente",
     "Capacitaciones": "capacitaciones",
@@ -208,7 +219,6 @@ def _get_logged_in_email() -> str:
 def _show_traceback_expander(title: str = "Ver detalle técnico (diagnóstico)"):
     """Muestra el traceback completo en un expander (sin depender de DEBUG)."""
     import traceback
-
     with st.expander(title):
         st.code(traceback.format_exc())
 
@@ -242,10 +252,6 @@ UNIDAD_ID_LABEL = {
 
 
 def _normalize_servicio_asignado(x: str) -> str:
-    """
-    Si el servicio asignado corresponde a unidad compactada (EDN/ECDG/EJEC o alias),
-    regresa el ID final. Si no, regresa el texto original (trim).
-    """
     raw = str(x or "").strip()
     if not raw:
         return ""
@@ -256,10 +262,6 @@ def _normalize_servicio_asignado(x: str) -> str:
 
 
 def _display_servicio(x: str) -> str:
-    """
-    Para selectores (DC): si es unidad compactada, muestra etiqueta ejecutiva.
-    Si no, muestra el nombre tal cual.
-    """
     v = str(x or "").strip()
     if not v:
         return ""
@@ -283,10 +285,6 @@ def get_gspread_client():
 # ============================================================
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_cat_carreras_df():
-    """
-    Carga el catálogo maestro CAT_CARRERAS.
-    No detiene la app si falla (deja DF vacío), porque primero estabilizamos baseline.
-    """
     try:
         gc = get_gspread_client()
         return cargar_cat_carreras_desde_gsheets(gc)
@@ -295,7 +293,7 @@ def get_cat_carreras_df():
 
 
 # ============================================================
-# Lectura de ACCESOS (cacheada, pero forzamos lectura fresca al login con .clear())
+# Lectura de ACCESOS
 # ============================================================
 @st.cache_data(ttl=120, show_spinner=False)
 def cargar_accesos_df() -> tuple[pd.DataFrame, str]:
@@ -378,27 +376,22 @@ def resolver_permiso_por_email(email: str, df_accesos: pd.DataFrame) -> dict:
 
     rol = str(fila.iloc[0]["ROL"]).strip().upper()
 
-    # 1) parse servicios
     servicios_raw = _parse_servicios_cell(fila.iloc[0].get("SERVICIO_ASIGNADO", ""))
 
-    # 2) normaliza compactadas a IDs finales (EDN/ECDG/EJEC)
     servicios = []
     for s in servicios_raw:
         s2 = _normalize_servicio_asignado(s)
         if s2:
             servicios.append(s2)
 
-    # dedupe (conserva orden)
     seen = set()
     servicios = [x for x in servicios if not (x in seen or seen.add(x))]
 
     modulos = _parse_modulos_cell(fila.iloc[0].get("MODULOS", ""))
 
-    # ✅ ACEPTA DG / DC / DF
     if rol not in ["DG", "DC", "DF"]:
         return {"ok": False, "rol": None, "servicios": [], "modulos": set(), "mensaje": "ROL inválido en ACCESOS. Usa DG, DC o DF."}
 
-    # ✅ Solo DC requiere SERVICIO_ASIGNADO
     if rol == "DC" and not servicios:
         return {"ok": False, "rol": None, "servicios": [], "modulos": set(), "mensaje": "Falta SERVICIO_ASIGNADO (ROL=DC)."}
 
@@ -421,7 +414,7 @@ def resolver_permiso_por_email(email: str, df_accesos: pd.DataFrame) -> dict:
 
 
 # ============================================================
-# Header (logo + título) - se queda en el body
+# Header (logo + título)
 # ============================================================
 logo_url = "udl_logo.png"
 try:
@@ -453,7 +446,6 @@ if not is_logged_in:
         st.login("google")
     st.stop()
 
-# 2) Ya autenticado: obtener email y validar contra ACCESOS (solo una vez por sesión)
 if "user_rol" not in st.session_state:
     user_email = _get_logged_in_email()
 
@@ -528,12 +520,11 @@ else:
     carrera = None  # se define en sidebar
 
 # ============================================================
-# Menú lateral (izquierdo): sesión + contexto + navegación
+# Menú lateral (izquierdo)
 # ============================================================
 with st.sidebar:
     st.markdown("### Navegación")
 
-    # Estado sesión + salir (compacto)
     st.success(f"Sesión activa:\n{st.session_state.get('user_email','')}")
     if st.button("Salir", use_container_width=True):
         try:
@@ -555,7 +546,6 @@ with st.sidebar:
     st.caption(f"Vista: **{vista}**")
     st.divider()
 
-    # Selector DC de carrera/servicio (solo si aplica)
     if ROL == "DC":
         SERVICIOS_DC = st.session_state.get("user_servicios") or []
         if isinstance(SERVICIOS_DC, str):
@@ -590,10 +580,13 @@ with st.sidebar:
         st.divider()
 
     # ============================================================
-    # Menú de apartados (Plan anual) - FILTRADO por MODULOS
+    # Menú de apartados (Plan anual)
     # ============================================================
     SECCIONES_TODAS = [
         "Encuesta de calidad",
+        # ✅ NUEVO
+        "Encuesta de calidad_F",
+
         "Observación de clases",
         "Evaluación docente",
         "Capacitaciones",
@@ -621,7 +614,6 @@ with st.sidebar:
         _show_traceback_expander()
         st.stop()
 
-    # Mantener seccion_forzada
     if "seccion_forzada" in st.session_state:
         forced = st.session_state.get("seccion_forzada")
         st.session_state.pop("seccion_forzada", None)
@@ -635,11 +627,9 @@ with st.sidebar:
         index=idx_forzada,
     )
 
-# Normaliza carrera
 if isinstance(carrera, str):
     carrera = carrera.strip()
 
-# Nota catálogo (no bloqueante)
 if df_cat_carreras.empty:
     st.caption(
         "Nota: CAT_CARRERAS aún no está disponible o no se pudo cargar "
@@ -667,11 +657,25 @@ except Exception:
     st.stop()
 
 # ============================================================
-# Router (igual que antes)
+# Router
 # ============================================================
 try:
     if seccion == "Encuesta de calidad":
         encuesta_calidad.render_encuesta_calidad(vista=vista, carrera=carrera)
+
+    # ✅ NUEVO: Encuesta de calidad_F (DF-only)
+    elif seccion == "Encuesta de calidad_F":
+        if not HAS_EC_F_MOD or encuesta_calidad_f is None:
+            st.subheader("Encuesta de calidad_F")
+            st.warning("🧪 Módulo habilitado, pero aún no está cargado en el repositorio.")
+            st.caption("Crea `encuesta_calidad_f.py` con `render_encuesta_calidad_f()`.")
+        else:
+            if not hasattr(encuesta_calidad_f, "render_encuesta_calidad_f"):
+                st.subheader("Encuesta de calidad_F")
+                st.error("El módulo `encuesta_calidad_f.py` no tiene la función `render_encuesta_calidad_f`.")
+                st.caption("Define: `def render_encuesta_calidad_f(): ...`")
+            else:
+                encuesta_calidad_f.render_encuesta_calidad_f()
 
     elif seccion == "Observación de clases":
         observacion_clases.render_observacion_clases(vista=vista, carrera=carrera)
