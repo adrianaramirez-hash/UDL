@@ -34,9 +34,6 @@ SHEET_PROCESADO = "PROCESADO"
 SHEET_MAPA = "MAPA_PREGUNTAS"
 SHEET_CATALOGO = "Catalogo_Servicio"
 
-FINANZAS_SHEET_ID = "11qszwEcEA6vvy7XYGo-w_WkqPp1kxoNG5GfJB_Wcc4A"
-FINANZAS_SHEET_NAME = "V_DF"
-
 
 def _to_datetime_safe(s):
     return pd.to_datetime(s, errors="coerce", dayfirst=True)
@@ -461,20 +458,6 @@ def _load_from_gsheets_by_url(url: str):
     return df, mapa, catalogo
 
 
-@st.cache_data(show_spinner=False, ttl=300)
-def _load_df_sheet():
-    sa = dict(st.secrets["gcp_service_account_json"])
-    gc = gspread.service_account_from_dict(sa)
-    sh = gc.open_by_key(FINANZAS_SHEET_ID)
-    ws = sh.worksheet(FINANZAS_SHEET_NAME)
-    values = ws.get_all_values()
-    if not values:
-        return pd.DataFrame()
-    headers = [h.strip() for h in values[0]]
-    rows = values[1:]
-    return pd.DataFrame(rows, columns=headers).replace("", pd.NA)
-
-
 def _prepare_mapa(mapa: pd.DataFrame) -> pd.DataFrame:
     mapa = _normalize_mapa_to_expected_schema(mapa)
     required_cols = {"header_exacto", "scale_code", "header_num"}
@@ -502,12 +485,73 @@ def render_encuesta_calidad(vista: Optional[str] = None, carrera: Optional[str] 
     st.subheader("Encuesta de calidad")
     vista = (vista or "Dirección General").strip()
 
-    if vista == "Dirección Finanzas":
+     if vista == "Dirección Finanzas":
         st.caption("Vista restringida para Dirección de Finanzas (solo datos administrativos autorizados).")
 
+        # --- Helpers locales para DF (para no duplicar funciones en el archivo) ---
+        def _norm_sheet_title(x: str) -> str:
+            return str(x).strip().lower().replace(" ", "").replace("_", "")
+
+        def _get_df_config_for_modalidad(mod: str) -> tuple[str, str]:
+            """
+            Devuelve (sheet_id, sheet_name) para la modalidad DF.
+            Requiere estas keys en Secrets:
+              - DF_VIRTUAL_SHEET_ID, DF_VIRTUAL_SHEET_NAME
+              - DF_ESCOLAR_SHEET_ID, DF_ESCOLAR_SHEET_NAME
+              - DF_PREPA_SHEET_ID, DF_PREPA_SHEET_NAME
+            """
+            mod = str(mod).strip()
+
+            if mod == "Virtual / Mixto":
+                sid = st.secrets.get("DF_VIRTUAL_SHEET_ID", "").strip()
+                sname = st.secrets.get("DF_VIRTUAL_SHEET_NAME", "").strip() or "V_DF"
+                key_name = "DF_VIRTUAL_SHEET_ID"
+            elif mod == "Escolarizado / Ejecutivas":
+                sid = st.secrets.get("DF_ESCOLAR_SHEET_ID", "").strip()
+                sname = st.secrets.get("DF_ESCOLAR_SHEET_NAME", "").strip() or "V_DF"
+                key_name = "DF_ESCOLAR_SHEET_ID"
+            elif mod == "Preparatoria":
+                sid = st.secrets.get("DF_PREPA_SHEET_ID", "").strip()
+                sname = st.secrets.get("DF_PREPA_SHEET_NAME", "").strip() or "V_DF"
+                key_name = "DF_PREPA_SHEET_ID"
+            else:
+                raise KeyError(f"Modalidad no reconocida: {mod}")
+
+            if not sid:
+                raise KeyError(f"Falta configurar {key_name} en Secrets.")
+            return sid, sname
+
+        @st.cache_data(show_spinner=False, ttl=300)
+        def _load_df_sheet_df(mod: str) -> pd.DataFrame:
+            sa = dict(st.secrets["gcp_service_account_json"])
+            gc = gspread.service_account_from_dict(sa)
+
+            sheet_id, sheet_name = _get_df_config_for_modalidad(mod)
+
+            sh = gc.open_by_key(sheet_id)
+            titles = [ws.title for ws in sh.worksheets()]
+            titles_norm = {_norm_sheet_title(t): t for t in titles}
+
+            resolved = titles_norm.get(_norm_sheet_title(sheet_name))
+            if not resolved:
+                raise ValueError(
+                    f"No encontré la pestaña '{sheet_name}' en DF para modalidad '{mod}'. "
+                    f"Disponibles: {', '.join(titles)}"
+                )
+
+            ws = sh.worksheet(resolved)
+            values = ws.get_all_values()
+            if not values:
+                return pd.DataFrame()
+            headers = [h.strip() for h in values[0]]
+            rows = values[1:]
+            return pd.DataFrame(rows, columns=headers).replace("", pd.NA)
+
+        # ---------------- UI DF ----------------
         with st.sidebar:
             st.markdown("### Filtros — Encuesta de calidad")
             st.caption("Vista: Dirección Finanzas")
+
             modalidad = st.selectbox(
                 "Modalidad",
                 ["Virtual / Mixto", "Escolarizado / Ejecutivas", "Preparatoria"],
@@ -517,17 +561,17 @@ def render_encuesta_calidad(vista: Optional[str] = None, carrera: Optional[str] 
 
         try:
             url = _get_url_for_modalidad(str(modalidad))
-            with st.spinner("Cargando datos (V_DF)…"):
-                df = _load_df_sheet()
+            with st.spinner("Cargando datos (DF)…"):
+                df = _load_df_sheet_df(str(modalidad))
             with st.spinner("Cargando MAPA_PREGUNTAS…"):
                 _, mapa, _ = _load_from_gsheets_by_url(url)
         except Exception as e:
-            st.error("No se pudieron cargar datos o MAPA_PREGUNTAS.")
+            st.error("No se pudieron cargar datos DF o MAPA_PREGUNTAS.")
             st.exception(e)
             return
 
         if df is None or df.empty:
-            st.warning("La hoja V_DF está vacía.")
+            st.warning("La hoja DF está vacía.")
             return
 
         fecha_col = _pick_fecha_col(df)
@@ -568,7 +612,7 @@ def render_encuesta_calidad(vista: Optional[str] = None, carrera: Optional[str] 
 
         num_cols = [c for c in base.columns if str(c).endswith("_num")]
         if not num_cols:
-            st.warning("No encontré columnas *_num en V_DF para esta modalidad.")
+            st.warning("No encontré columnas *_num en DF para esta modalidad.")
             st.dataframe(base.head(30), use_container_width=True)
             return
 
@@ -621,7 +665,7 @@ def render_encuesta_calidad(vista: Optional[str] = None, carrera: Optional[str] 
             fname += f"_{str(carrera_sel).strip()}"
         _download_buttons_body(f, filename_prefix=fname, kpis_df=kpis)
 
-        st.caption(f"Fuente: **V_DF** | Modalidad: **{modalidad}** | Registros filtrados: **{len(f)}**")
+        st.caption(f"Fuente: **DF** | Modalidad: **{modalidad}** | Registros filtrados: **{len(f)}**")
 
         tab1, tab2, tab3 = st.tabs(["Resumen", "Por sección", "Comentarios"])
 
@@ -814,7 +858,6 @@ def render_encuesta_calidad(vista: Optional[str] = None, carrera: Optional[str] 
             st.dataframe(pd.DataFrame({sel_lbl: textos.reset_index(drop=True)}), use_container_width=True)
 
         return
-
     modalidad = _resolver_modalidad_auto(vista, carrera) if vista != "Dirección General" else None
 
     with st.sidebar:
