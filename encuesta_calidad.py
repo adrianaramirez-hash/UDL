@@ -35,7 +35,7 @@ SHEET_MAPA = "MAPA_PREGUNTAS"
 SHEET_CATALOGO = "Catalogo_Servicio"
 
 FINANZAS_SHEET_ID = "11qszwEcEA6vvy7XYGo-w_WkqPp1kxoNG5GfJB_Wcc4A"
-FINANZAS_SHEET_NAME = "VISTA_FINANZAS_NUM"
+FINANZAS_SHEET_NAME = "V_DF"
 
 
 def _to_datetime_safe(s):
@@ -178,6 +178,53 @@ def _best_carrera_col(df: pd.DataFrame) -> Optional[str]:
     return None
 
 
+def _best_modalidad_col(df: pd.DataFrame) -> Optional[str]:
+    candidates = [
+        "Modalidad",
+        "modalidad",
+        "Tipo de modalidad",
+        "Modalidad de estudio",
+        "Modalidad (Virtual/Escolarizado/Prepa)",
+    ]
+    for c in candidates:
+        if c in df.columns:
+            vals = df[c].dropna().astype(str).str.strip()
+            if vals.nunique() >= 2:
+                return c
+    for c in candidates:
+        if c in df.columns:
+            return c
+    return None
+
+
+def _modalidad_mask(df: pd.DataFrame, modalidad: str, modalidad_col: Optional[str], carrera_col: Optional[str]) -> pd.Series:
+    sel = _norm_txt(modalidad)
+
+    if sel == _norm_txt("Preparatoria"):
+        m = pd.Series(False, index=df.index)
+        if modalidad_col and modalidad_col in df.columns:
+            v = df[modalidad_col].astype(str).map(_norm_txt)
+            m = m | v.eq("preparatoria") | v.str.contains("prepa", na=False)
+        if carrera_col and carrera_col in df.columns:
+            v2 = df[carrera_col].astype(str).map(_norm_txt)
+            m = m | v2.eq("preparatoria") | v2.str.contains("prepa", na=False)
+        return m
+
+    if modalidad_col and modalidad_col in df.columns:
+        v = df[modalidad_col].astype(str).map(_norm_txt)
+        if sel == _norm_txt("Virtual / Mixto"):
+            return v.str.contains("virtual", na=False) | v.str.contains("mixto", na=False) | v.str.contains("hibrid", na=False)
+        return v.str.contains("escolar", na=False) | v.str.contains("ejecut", na=False)
+
+    if carrera_col and carrera_col in df.columns:
+        v2 = df[carrera_col].astype(str).map(_norm_txt)
+        if sel == _norm_txt("Virtual / Mixto"):
+            return v2.str.contains("virtual", na=False) | v2.str.contains("mixto", na=False)
+        return (~(v2.eq("preparatoria") | v2.str.contains("prepa", na=False)))
+
+    return pd.Series(True, index=df.index)
+
+
 def _normalize_mapa_to_expected_schema(mapa: pd.DataFrame) -> pd.DataFrame:
     m = mapa.copy()
     cols = set(m.columns)
@@ -246,14 +293,7 @@ def _resolve_open_cols_from_mapa(m_open: pd.DataFrame) -> List[Tuple[str, str, s
     return out
 
 
-def _render_open_comments_box(
-    *,
-    f: pd.DataFrame,
-    items: List[Tuple[str, str, str]],
-    sec_code: str,
-    title: str,
-    key_prefix: str,
-):
+def _render_open_comments_box(*, f: pd.DataFrame, items: List[Tuple[str, str, str]], sec_code: str, title: str, key_prefix: str):
     if not items:
         st.caption("Sin preguntas ABIERTA en esta sección.")
         return
@@ -422,7 +462,7 @@ def _load_from_gsheets_by_url(url: str):
 
 
 @st.cache_data(show_spinner=False, ttl=300)
-def _load_finanzas_num():
+def _load_df_sheet():
     sa = dict(st.secrets["gcp_service_account_json"])
     gc = gspread.service_account_from_dict(sa)
     sh = gc.open_by_key(FINANZAS_SHEET_ID)
@@ -433,6 +473,29 @@ def _load_finanzas_num():
     headers = [h.strip() for h in values[0]]
     rows = values[1:]
     return pd.DataFrame(rows, columns=headers).replace("", pd.NA)
+
+
+def _prepare_mapa(mapa: pd.DataFrame) -> pd.DataFrame:
+    mapa = _normalize_mapa_to_expected_schema(mapa)
+    required_cols = {"header_exacto", "scale_code", "header_num"}
+    if not required_cols.issubset(set(mapa.columns)):
+        raise ValueError(f"MAPA_PREGUNTAS inválido. Columnas: {list(mapa.columns)}")
+
+    mapa = mapa.copy()
+    mapa["header_num"] = mapa["header_num"].astype(str).str.strip()
+    mapa["scale_code"] = mapa["scale_code"].astype(str).str.strip()
+    mapa["header_exacto"] = mapa["header_exacto"].astype(str).str.strip()
+
+    if "section_code" in mapa.columns and mapa["section_code"].notna().any():
+        mapa["section_code"] = mapa["section_code"].astype(str).str.strip()
+    else:
+        mapa["section_code"] = mapa["header_num"].apply(lambda c: c.split("_", 1)[0] if "_" in c else "OTR")
+
+    mapa["section_name"] = mapa.get("section_name", pd.Series([""] * len(mapa))).fillna("").astype(str).str.strip()
+    mask_abbrev = (mapa["section_name"] == "") | (mapa["section_name"] == mapa["section_code"]) | (mapa["section_name"].str.len() <= 4)
+    mapa.loc[mask_abbrev, "section_name"] = mapa.loc[mask_abbrev, "section_code"].map(SECTION_LABELS).fillna(mapa.loc[mask_abbrev, "section_code"])
+    mapa["section_name"] = mapa["section_name"].astype(str)
+    return mapa
 
 
 def render_encuesta_calidad(vista: Optional[str] = None, carrera: Optional[str] = None):
@@ -454,8 +517,8 @@ def render_encuesta_calidad(vista: Optional[str] = None, carrera: Optional[str] 
 
         try:
             url = _get_url_for_modalidad(str(modalidad))
-            with st.spinner("Cargando datos (Finanzas)…"):
-                df = _load_finanzas_num()
+            with st.spinner("Cargando datos (V_DF)…"):
+                df = _load_df_sheet()
             with st.spinner("Cargando MAPA_PREGUNTAS…"):
                 _, mapa, _ = _load_from_gsheets_by_url(url)
         except Exception as e:
@@ -464,39 +527,35 @@ def render_encuesta_calidad(vista: Optional[str] = None, carrera: Optional[str] 
             return
 
         if df is None or df.empty:
-            st.warning("La hoja VISTA_FINANZAS_NUM está vacía.")
+            st.warning("La hoja V_DF está vacía.")
             return
-
-        if str(modalidad) == "Preparatoria":
-            df = _ensure_prepa_columns(df)
 
         fecha_col = _pick_fecha_col(df)
         if fecha_col:
             df[fecha_col] = _to_datetime_safe(df[fecha_col])
 
-        mapa = _normalize_mapa_to_expected_schema(mapa)
-        required_cols = {"header_exacto", "scale_code", "header_num"}
-        if not required_cols.issubset(set(mapa.columns)):
-            st.error("MAPA_PREGUNTAS debe traer header_exacto, scale_code, header_num (o LAB: header_raw, header_id, tipo).")
-            st.caption(f"Columnas detectadas: {list(mapa.columns)}")
+        try:
+            mapa = _prepare_mapa(mapa)
+        except Exception as e:
+            st.error("MAPA_PREGUNTAS inválido.")
+            st.exception(e)
             return
 
-        mapa = mapa.copy()
-        mapa["header_num"] = mapa["header_num"].astype(str).str.strip()
-        mapa["scale_code"] = mapa["scale_code"].astype(str).str.strip()
-        mapa["header_exacto"] = mapa["header_exacto"].astype(str).str.strip()
+        carrera_col = _best_carrera_col(df)
+        modalidad_col = _best_modalidad_col(df)
 
-        if "section_code" in mapa.columns and mapa["section_code"].notna().any():
-            mapa["section_code"] = mapa["section_code"].astype(str).str.strip()
-        else:
-            mapa["section_code"] = "OTR"
+        base = df.copy()
+        base = base[_modalidad_mask(base, str(modalidad), modalidad_col, carrera_col)]
 
-        mapa["section_name"] = mapa.get("section_name", pd.Series([""] * len(mapa))).fillna("").astype(str).str.strip()
-        mask_abbrev = (mapa["section_name"] == "") | (mapa["section_name"] == mapa["section_code"]) | (mapa["section_name"].str.len() <= 4)
-        mapa.loc[mask_abbrev, "section_name"] = mapa.loc[mask_abbrev, "section_code"].map(SECTION_LABELS).fillna(mapa.loc[mask_abbrev, "section_code"])
-        mapa["section_name"] = mapa["section_name"].astype(str)
+        if str(modalidad) == "Preparatoria":
+            base = _ensure_prepa_columns(base)
+            carrera_col = _best_carrera_col(base)
 
-        mapa["exists"] = mapa["header_num"].isin(df.columns)
+        if len(base) == 0:
+            st.warning("No hay registros para la modalidad seleccionada.")
+            return
+
+        mapa["exists"] = mapa["header_num"].isin(base.columns)
         mapa_ok = mapa[mapa["exists"]].copy()
 
         mapa_ok_num = mapa_ok[
@@ -507,27 +566,21 @@ def render_encuesta_calidad(vista: Optional[str] = None, carrera: Optional[str] 
         mapa_ok_open = mapa_ok[mapa_ok["scale_code"].astype(str).str.upper() == "ABIERTA"].copy()
         open_items_all = _resolve_open_cols_from_mapa(mapa_ok_open)
 
-        num_cols = [c for c in df.columns if str(c).endswith("_num")]
+        num_cols = [c for c in base.columns if str(c).endswith("_num")]
         if not num_cols:
-            st.warning("No encontré columnas *_num en VISTA_FINANZAS_NUM.")
-            st.dataframe(df.head(30), use_container_width=True)
+            st.warning("No encontré columnas *_num en V_DF para esta modalidad.")
+            st.dataframe(base.head(30), use_container_width=True)
             return
 
-        likert_cols, yesno_cols = _auto_classify_numcols(df, num_cols)
+        likert_cols, yesno_cols = _auto_classify_numcols(base, num_cols)
 
         years = ["(Todos)"]
-        if fecha_col and df[fecha_col].notna().any():
-            years += sorted(df[fecha_col].dt.year.dropna().unique().astype(int).tolist(), reverse=True)
-
-        carrera_col = _best_carrera_col(df)
-
-        f0 = df.copy()
-        if str(modalidad) == "Preparatoria" and carrera_col:
-            f0 = f0[f0[carrera_col].astype(str).str.strip().str.lower() == "preparatoria"]
+        if fecha_col and base[fecha_col].notna().any():
+            years += sorted(base[fecha_col].dt.year.dropna().unique().astype(int).tolist(), reverse=True)
 
         carreras_opts = ["(Todas)"]
-        if carrera_col:
-            vals = f0[carrera_col].dropna().astype(str).str.strip()
+        if carrera_col and carrera_col in base.columns:
+            vals = base[carrera_col].dropna().astype(str).str.strip()
             if vals.nunique() >= 1:
                 carreras_opts += sorted(vals.unique().tolist())
 
@@ -539,7 +592,7 @@ def render_encuesta_calidad(vista: Optional[str] = None, carrera: Optional[str] 
                 carrera_sel = "(Todas)"
             st.divider()
 
-        f = f0.copy()
+        f = base.copy()
         if year_sel != "(Todos)" and fecha_col:
             f = f[f[fecha_col].dt.year == int(year_sel)]
         if carrera_col and carrera_sel != "(Todas)":
@@ -568,7 +621,7 @@ def render_encuesta_calidad(vista: Optional[str] = None, carrera: Optional[str] 
             fname += f"_{str(carrera_sel).strip()}"
         _download_buttons_body(f, filename_prefix=fname, kpis_df=kpis)
 
-        st.caption(f"Fuente: **VISTA_FINANZAS_NUM** | Registros filtrados: **{len(f)}**")
+        st.caption(f"Fuente: **V_DF** | Modalidad: **{modalidad}** | Registros filtrados: **{len(f)}**")
 
         tab1, tab2, tab3 = st.tabs(["Resumen", "Por sección", "Comentarios"])
 
@@ -796,27 +849,12 @@ def render_encuesta_calidad(vista: Optional[str] = None, carrera: Optional[str] 
     if fecha_col:
         df[fecha_col] = _to_datetime_safe(df[fecha_col])
 
-    mapa = _normalize_mapa_to_expected_schema(mapa)
-    required_cols = {"header_exacto", "scale_code", "header_num"}
-    if not required_cols.issubset(set(mapa.columns)):
-        st.error("MAPA_PREGUNTAS debe traer header_exacto, scale_code, header_num (o LAB: header_raw, header_id, tipo).")
-        st.caption(f"Columnas detectadas: {list(mapa.columns)}")
+    try:
+        mapa = _prepare_mapa(mapa)
+    except Exception as e:
+        st.error("MAPA_PREGUNTAS inválido.")
+        st.exception(e)
         return
-
-    mapa = mapa.copy()
-    mapa["header_num"] = mapa["header_num"].astype(str).str.strip()
-    mapa["scale_code"] = mapa["scale_code"].astype(str).str.strip()
-    mapa["header_exacto"] = mapa["header_exacto"].astype(str).str.strip()
-
-    if "section_code" in mapa.columns and mapa["section_code"].notna().any():
-        mapa["section_code"] = mapa["section_code"].astype(str).str.strip()
-    else:
-        mapa["section_code"] = "OTR"
-
-    mapa["section_name"] = mapa.get("section_name", pd.Series([""] * len(mapa))).fillna("").astype(str).str.strip()
-    mask_abbrev = (mapa["section_name"] == "") | (mapa["section_name"] == mapa["section_code"]) | (mapa["section_name"].str.len() <= 4)
-    mapa.loc[mask_abbrev, "section_name"] = mapa.loc[mask_abbrev, "section_code"].map(SECTION_LABELS).fillna(mapa.loc[mask_abbrev, "section_code"])
-    mapa["section_name"] = mapa["section_name"].astype(str)
 
     mapa["exists"] = mapa["header_num"].isin(df.columns)
     mapa_ok = mapa[mapa["exists"]].copy()
