@@ -1,452 +1,3 @@
-import pandas as pd
-import streamlit as st
-import altair as alt
-import gspread
-import textwrap
-import unicodedata
-from io import BytesIO
-
-SECTION_LABELS = {
-    "DIR": "Director / Coordinación",
-    "SER": "Servicios administrativos y generales",
-    "ADM": "Acceso a soporte administrativo",
-    "ACD": "Servicios académicos",
-    "APR": "Aprendizaje",
-    "EVA": "Evaluación del conocimiento",
-    "SEAC": "Plataforma SEAC",
-    "PLAT": "Plataforma SEAC",
-    "SAT": "Plataforma SEAC",
-    "MAT": "Materiales en la plataforma",
-    "UDL": "Comunicación con la Universidad",
-    "COM": "Comunicación con compañeros",
-    "INS": "Instalaciones y equipo tecnológico",
-    "AMB": "Ambiente escolar",
-    "REC": "Recomendación y satisfacción",
-    "OTR": "Otros",
-}
-
-MAX_VERTICAL_QUESTIONS = 7
-MAX_VERTICAL_SECTIONS = 7
-
-SHEET_PROCESADO = "PROCESADO"
-SHEET_MAPA = "MAPA_PREGUNTAS"
-SHEET_CATALOGO = "Catalogo_Servicio"
-
-FINANZAS_SHEET_ID = "11qszwEcEA6vvy7XYGo-w_WkqPp1kxoNG5GfJB_Wcc4A"
-FINANZAS_SHEET_NAME = "VISTA_FINANZAS_NUM"
-
-
-def _section_from_numcol(col: str) -> str:
-    return col.split("_", 1)[0] if "_" in col else "OTR"
-
-
-def _to_datetime_safe(s):
-    return pd.to_datetime(s, errors="coerce", dayfirst=True)
-
-
-def _wrap_text(s: str, width: int = 18, max_lines: int = 3) -> str:
-    if s is None or (isinstance(s, float) and pd.isna(s)):
-        return ""
-    s = str(s).strip()
-    if not s:
-        return ""
-    lines = textwrap.wrap(s, width=width)
-    if len(lines) <= max_lines:
-        return "\n".join(lines)
-    kept = lines[:max_lines]
-    kept[-1] = (kept[-1][:-1] + "…") if len(kept[-1]) >= 1 else "…"
-    return "\n".join(kept)
-
-
-def _mean_numeric(series: pd.Series):
-    return pd.to_numeric(series, errors="coerce").mean()
-
-
-def _norm_txt(x: str) -> str:
-    if x is None:
-        return ""
-    s = str(x).strip().lower()
-    s = "".join(ch for ch in unicodedata.normalize("NFKD", s) if not unicodedata.combining(ch))
-    s = " ".join(s.split())
-    return s
-
-
-def _is_exec_text(norm_s: str) -> bool:
-    return ("ejecutiva" in norm_s) or ("licenciatura ejecutiva" in norm_s) or ("lic. ejecutiva" in norm_s)
-
-
-def _strip_exec_prefix(s: str) -> str:
-    t = _norm_txt(s)
-    for p in ["licenciatura ejecutiva:", "lic. ejecutiva:"]:
-        if t.startswith(p):
-            t = _norm_txt(t.replace(p, "", 1))
-    return t
-
-
-def _strip_generic_prefixes(s: str) -> str:
-    t = _norm_txt(s)
-    for p in ["licenciatura:", "lic."]:
-        if t.startswith(p):
-            t = _norm_txt(t.replace(p, "", 1))
-    return t
-
-
-def _match_carrera_mask_dc(series: pd.Series, target_raw: str) -> pd.Series:
-    s_norm = series.astype(str).map(_norm_txt)
-    t_norm = _norm_txt(target_raw)
-    target_is_exec = _is_exec_text(t_norm)
-
-    if target_is_exec:
-        allowed = s_norm.map(_is_exec_text)
-        t_base = _strip_exec_prefix(target_raw)
-    else:
-        allowed = ~s_norm.map(_is_exec_text)
-        t_base = _strip_generic_prefixes(target_raw)
-
-    m_exact = (s_norm == t_norm)
-    if t_base and t_base != t_norm:
-        m_exact = m_exact | (s_norm == t_base)
-
-    m_exact = m_exact & allowed
-    if m_exact.any():
-        return m_exact
-
-    m_cont = pd.Series(False, index=series.index)
-    if t_norm:
-        m_cont = m_cont | s_norm.str.contains(t_norm, na=False)
-    if t_base and t_base != t_norm:
-        m_cont = m_cont | s_norm.str.contains(t_base, na=False)
-
-    return m_cont & allowed
-
-
-def _pick_fecha_col(df: pd.DataFrame) -> str | None:
-    for c in ["Marca temporal", "Marca Temporal", "Fecha", "fecha", "timestamp", "Timestamp"]:
-        if c in df.columns:
-            return c
-    return None
-
-
-def _ensure_prepa_columns(df: pd.DataFrame) -> pd.DataFrame:
-    out = df.copy()
-    if "Servicio" not in out.columns:
-        out["Servicio"] = "Preparatoria"
-    if "Carrera_Catalogo" not in out.columns:
-        out["Carrera_Catalogo"] = "Preparatoria"
-    return out
-
-
-def _get_url_for_modalidad(modalidad: str) -> str:
-    URL_KEYS = {
-        "Virtual / Mixto": "EC_VIRTUAL_URL",
-        "Escolarizado / Ejecutivas": "EC_ESCOLAR_URL",
-        "Preparatoria": "EC_PREPA_URL",
-    }
-    key = URL_KEYS.get(modalidad)
-    if not key:
-        raise KeyError(f"Modalidad no reconocida: {modalidad}")
-    url = st.secrets.get(key, "").strip()
-    if not url:
-        raise KeyError(f"Falta configurar {key} en Secrets.")
-    return url
-
-
-def _resolver_modalidad_auto(vista: str, carrera: str | None) -> str:
-    if vista == "Dirección General":
-        return ""
-    c = (carrera or "").strip().lower()
-    if c == "preparatoria":
-        return "Preparatoria"
-    return "Escolarizado / Ejecutivas"
-
-
-def _best_carrera_col(df: pd.DataFrame) -> str | None:
-    candidates = [
-        "Carrera_Catalogo",
-        "Servicio",
-        "Selecciona el programa académico que estudias",
-        "Servicio de procedencia",
-        "Programa",
-        "Carrera",
-    ]
-    for c in candidates:
-        if c in df.columns:
-            vals = df[c].dropna().astype(str).str.strip()
-            if vals.nunique() >= 2:
-                return c
-    for c in candidates:
-        if c in df.columns:
-            return c
-    return None
-
-
-def _normalize_mapa_to_expected_schema(mapa: pd.DataFrame) -> pd.DataFrame:
-    m = mapa.copy()
-    cols = set(m.columns)
-
-    if {"header_exacto", "scale_code", "header_num"}.issubset(cols):
-        m["header_exacto"] = m["header_exacto"].astype(str).str.strip()
-        m["scale_code"] = m["scale_code"].astype(str).str.strip()
-        m["header_num"] = m["header_num"].astype(str).str.strip()
-        return m
-
-    if {"header_raw", "header_id"}.issubset(cols):
-        m["header_exacto"] = m["header_raw"].astype(str).str.strip()
-
-        if "tipo" in cols:
-            t = m["tipo"].astype(str).str.strip().str.upper()
-            m["scale_code"] = t.map({"LIKERT": "LIKERT_1_5", "YESNO": "YESNO_0_1", "ABIERTA": "ABIERTA"}).fillna(t)
-        else:
-            m["scale_code"] = "LIKERT_1_5"
-
-        hid = m["header_id"].astype(str).str.strip()
-        if "tipo" in cols:
-            t = m["tipo"].astype(str).str.strip().str.upper()
-            m["header_num"] = hid + t.map({"ABIERTA": "_txt"}).fillna("_num")
-        else:
-            m["header_num"] = hid + "_num"
-
-        if "section_code" in cols:
-            m["section_code"] = m["section_code"].astype(str).str.strip()
-        if "section_name" in cols:
-            m["section_name"] = m["section_name"].fillna("").astype(str).str.strip()
-
-        return m
-
-    return m
-
-
-def _auto_classify_numcols(df: pd.DataFrame, cols: list[str]) -> tuple[list[str], list[str]]:
-    if not cols:
-        return [], []
-    dnum = df[cols].apply(pd.to_numeric, errors="coerce")
-    dnum = dnum.loc[:, ~dnum.columns.duplicated()]
-    maxs = dnum.max(axis=0, skipna=True)
-
-    likert_cols = []
-    for c in cols:
-        if c not in maxs.index:
-            continue
-        v = maxs.loc[c]
-        if pd.notna(v) and float(v) > 1.0:
-            likert_cols.append(c)
-
-    yesno_cols = [c for c in cols if c not in likert_cols]
-    return likert_cols, yesno_cols
-
-
-def _resolve_open_cols_from_mapa(m_open: pd.DataFrame) -> list[tuple[str, str, str]]:
-    out = []
-    if m_open is None or m_open.empty or "header_num" not in m_open.columns:
-        return out
-    for _, r in m_open.iterrows():
-        sec = str(r.get("section_code", "OTR")).strip()
-        lbl = str(r.get("header_exacto", "")).strip()
-        col = str(r.get("header_num", "")).strip()
-        if col and col.endswith("_txt"):
-            out.append((sec, lbl, col))
-    return out
-
-
-def _render_open_comments_box(
-    *,
-    f: pd.DataFrame,
-    items: list[tuple[str, str, str]],
-    sec_code: str,
-    title: str,
-    key_prefix: str,
-):
-    if not items:
-        st.caption("Sin preguntas ABIERTA en esta sección.")
-        return
-
-    st.divider()
-    st.markdown(f"**{title}**")
-
-    labels = [lbl for _, lbl, _ in items]
-    sel_lbl = st.selectbox("Campo de comentario", labels, index=0, key=f"{key_prefix}_sel_{sec_code}")
-    col_map = {lbl: col for _, lbl, col in items}
-    sel_col = col_map[sel_lbl]
-
-    cA, cB = st.columns([2.2, 1.0])
-    with cA:
-        q = st.text_input("Buscar texto (contiene)", value="", key=f"{key_prefix}_q_{sec_code}")
-    with cB:
-        ver_todos = st.checkbox("Ver todos", value=False, key=f"{key_prefix}_all_{sec_code}")
-
-    textos = f[sel_col].dropna().astype(str)
-    textos = textos[textos.str.strip() != ""]
-
-    if (not ver_todos) and q.strip():
-        qn = q.strip().lower()
-        textos = textos[textos.str.lower().str.contains(qn, na=False)]
-
-    st.caption(f"Comentarios encontrados: **{len(textos)}**")
-    st.dataframe(pd.DataFrame({sel_lbl: textos.reset_index(drop=True)}), use_container_width=True)
-
-
-def _bar_chart_auto(
-    df_in: pd.DataFrame,
-    category_col: str,
-    value_col: str,
-    value_domain: list,
-    value_title: str,
-    tooltip_cols: list,
-    max_vertical: int,
-    wrap_width_vertical: int = 18,
-    wrap_width_horizontal: int = 30,
-    height_per_row: int = 28,
-    base_height: int = 260,
-    hide_category_labels: bool = True,
-):
-    if df_in is None or df_in.empty:
-        return None
-
-    df = df_in.copy()
-    df["__cat"] = df[category_col].astype(str)
-    df["__val"] = pd.to_numeric(df[value_col], errors="coerce")
-    df = df.dropna(subset=["__val"])
-    if df.empty:
-        return None
-
-    n = len(df)
-    cat_axis_vertical = alt.Axis(
-        title=None,
-        labels=not hide_category_labels,
-        ticks=not hide_category_labels,
-        labelAngle=0,
-        labelLimit=0,
-    )
-    cat_axis_horizontal = alt.Axis(
-        title=None,
-        labels=not hide_category_labels,
-        ticks=not hide_category_labels,
-        labelLimit=0,
-    )
-
-    if n <= max_vertical:
-        df["_cat_wrapped"] = df["__cat"].apply(lambda x: _wrap_text(x, width=wrap_width_vertical, max_lines=3))
-        return (
-            alt.Chart(df)
-            .mark_bar()
-            .encode(
-                x=alt.X("_cat_wrapped:N", sort=alt.SortField(field="__val", order="descending"), axis=cat_axis_vertical),
-                y=alt.Y("__val:Q", scale=alt.Scale(domain=value_domain), axis=alt.Axis(title=value_title)),
-                tooltip=tooltip_cols,
-            )
-            .properties(height=max(320, base_height))
-        )
-
-    df["_cat_wrapped"] = df["__cat"].apply(lambda x: _wrap_text(x, width=wrap_width_horizontal, max_lines=3))
-    dynamic_height = max(base_height, n * height_per_row)
-
-    return (
-        alt.Chart(df)
-        .mark_bar()
-        .encode(
-            y=alt.Y("_cat_wrapped:N", sort=alt.SortField(field="__val", order="descending"), axis=cat_axis_horizontal),
-            x=alt.X("__val:Q", scale=alt.Scale(domain=value_domain), axis=alt.Axis(title=value_title)),
-            tooltip=tooltip_cols,
-        )
-        .properties(height=dynamic_height)
-    )
-
-
-def _create_excel_download(df: pd.DataFrame, kpis_df: pd.DataFrame | None, filename: str):
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        df.to_excel(writer, sheet_name="DATA_FILTRADA", index=False)
-        if kpis_df is not None and not kpis_df.empty:
-            kpis_df.to_excel(writer, sheet_name="KPIS", index=False)
-    output.seek(0)
-
-    st.download_button(
-        "⬇️ DESCARGAR REPORTE COMPLETO (EXCEL)",
-        data=output,
-        file_name=filename,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-    )
-
-
-def _download_buttons_body(df: pd.DataFrame, filename_prefix: str, kpis_df: pd.DataFrame | None = None):
-    if df is None or getattr(df, "empty", True):
-        return
-
-    st.markdown("### 📥 Exportación de información")
-    c1, c2 = st.columns(2)
-
-    with c1:
-        csv = df.to_csv(index=False).encode("utf-8-sig")
-        st.download_button(
-            "⬇️ Descargar base completa (CSV)",
-            data=csv,
-            file_name=f"{filename_prefix}.csv",
-            mime="text/csv",
-            use_container_width=True,
-        )
-
-    with c2:
-        _create_excel_download(df, kpis_df, f"{filename_prefix}.xlsx")
-
-    st.markdown("---")
-
-
-@st.cache_data(show_spinner=False, ttl=300)
-def _load_from_gsheets_by_url(url: str):
-    sa = dict(st.secrets["gcp_service_account_json"])
-    gc = gspread.service_account_from_dict(sa)
-    sh = gc.open_by_url(url)
-
-    def norm(x: str) -> str:
-        return str(x).strip().lower().replace(" ", "").replace("_", "")
-
-    titles = [ws.title for ws in sh.worksheets()]
-    titles_norm = {norm(t): t for t in titles}
-
-    def resolve(sheet_name: str) -> str | None:
-        return titles_norm.get(norm(sheet_name))
-
-    ws_pro = resolve(SHEET_PROCESADO)
-    ws_map = resolve(SHEET_MAPA)
-    ws_cat = resolve(SHEET_CATALOGO)
-
-    missing = []
-    if not ws_pro:
-        missing.append(SHEET_PROCESADO)
-    if not ws_map:
-        missing.append(SHEET_MAPA)
-    if missing:
-        raise ValueError("No encontré pestañas: " + ", ".join(missing) + " | Disponibles: " + ", ".join(titles))
-
-    def ws_to_df(ws_title: str) -> pd.DataFrame:
-        ws = sh.worksheet(ws_title)
-        values = ws.get_all_values()
-        if not values:
-            return pd.DataFrame()
-        headers = [h.strip() for h in values[0]]
-        rows = values[1:]
-        return pd.DataFrame(rows, columns=headers).replace("", pd.NA)
-
-    df = ws_to_df(ws_pro)
-    mapa = ws_to_df(ws_map)
-    catalogo = ws_to_df(ws_cat) if ws_cat else pd.DataFrame()
-    return df, mapa, catalogo
-
-
-@st.cache_data(show_spinner=False, ttl=300)
-def _load_finanzas_num():
-    sa = dict(st.secrets["gcp_service_account_json"])
-    gc = gspread.service_account_from_dict(sa)
-    sh = gc.open_by_key(FINANZAS_SHEET_ID)
-    ws = sh.worksheet(FINANZAS_SHEET_NAME)
-    values = ws.get_all_values()
-    if not values:
-        return pd.DataFrame()
-    headers = [h.strip() for h in values[0]]
-    rows = values[1:]
-    return pd.DataFrame(rows, columns=headers).replace("", pd.NA)
-
 def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None):
     st.subheader("Encuesta de calidad")
     vista = (vista or "Dirección General").strip()
@@ -477,7 +28,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
         if fecha_col and df[fecha_col].notna().any():
             years += sorted(df[fecha_col].dt.year.dropna().unique().astype(int).tolist(), reverse=True)
 
-        # filtro opcional adicional (si existe alguna columna tipo Servicio/Programa/Modalidad)
         servicio_col = _best_carrera_col(df)
         servicio_opts = None
         if servicio_col:
@@ -505,7 +55,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
             st.warning("No hay registros con los filtros seleccionados.")
             return
 
-        # detectar abiertas
         open_cols = [
             c
             for c in f.columns
@@ -524,7 +73,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
             )
         ]
 
-        # detectar numéricas (sin depender de *_num)
         base_exclude = {c for c in ["Marca temporal", "Marca Temporal"] if c in f.columns}
         num_candidates = []
         for c in f.columns:
@@ -557,7 +105,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
 
         st.caption(f"Fuente: **VISTA_FINANZAS_NUM** | Registros filtrados: **{len(f)}**")
 
-        # mapa sintético por prefijo (para agrupar)
         mapa_rows = []
         for c in num_candidates:
             sec = _section_from_numcol(str(c))
@@ -573,7 +120,6 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
             )
         mapa_ok_num = pd.DataFrame(mapa_rows)
 
-        # abiertas sintéticas por prefijo
         open_items_all = []
         for c in open_cols:
             sec = _section_from_numcol(str(c))
@@ -778,21 +324,25 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
         return
 
     # =========================================================
-    # VISTA GENERAL / DIRECTORES (tu lógica original)
+    # VISTA GENERAL / DIRECTORES (corregido: Modalidad siempre seleccionable
+    # + Carrera/Servicio por modalidad + Virtual en mantenimiento + sin mostrar "OTR")
     # =========================================================
-    modalidad = _resolver_modalidad_auto(vista, carrera) if vista != "Dirección General" else None
 
     with st.sidebar:
         st.markdown("### Filtros — Encuesta de calidad")
-        if vista == "Dirección General":
-            modalidad = st.selectbox(
-                "Modalidad",
-                ["Virtual / Mixto", "Escolarizado / Ejecutivas", "Preparatoria"],
-                index=0,
-                key="ec_dg_modalidad",
-            )
-        else:
-            st.caption(f"Modalidad: {modalidad}")
+
+        modalidad = st.selectbox(
+            "Modalidad",
+            ["Escolarizado / Ejecutivas", "Preparatoria", "Virtual / Mixto"],
+            index=0,
+            key=f"ec_modalidad__{vista}",
+        )
+
+        # Aviso y bloqueo SOLO para Virtual (pero conservando que siempre puedas cambiar modalidad)
+        if str(modalidad) == "Virtual / Mixto":
+            st.warning("🛠️ Virtual / Mixto: **En mantenimiento**.")
+            st.info("Cambia la Modalidad para consultar datos disponibles.")
+            st.stop()
 
     try:
         url = _get_url_for_modalidad(str(modalidad))
@@ -826,12 +376,15 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
     mapa["scale_code"] = mapa["scale_code"].astype(str).str.strip()
     mapa["header_exacto"] = mapa["header_exacto"].astype(str).str.strip()
 
+    # Sección: siempre por section_code/section_name del mapa (y si falta, se infiere)
     if "section_code" in mapa.columns and mapa["section_code"].notna().any():
         mapa["section_code"] = mapa["section_code"].astype(str).str.strip()
     else:
         mapa["section_code"] = mapa["header_num"].apply(_section_from_numcol)
 
     mapa["section_name"] = mapa.get("section_name", pd.Series([""] * len(mapa))).fillna("").astype(str).str.strip()
+
+    # Si el mapa trae nombres vacíos o abreviaturas, los completamos; PERO "OTR" no se mostrará después
     mask_abbrev = (
         (mapa["section_name"] == "")
         | (mapa["section_name"] == mapa["section_code"])
@@ -853,6 +406,9 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
     mapa_ok_open = mapa_ok[mapa_ok["scale_code"].astype(str).str.upper() == "ABIERTA"].copy()
     open_items_all = _resolve_open_cols_from_mapa(mapa_ok_open)
 
+    # **NO mostrar "OTR"** (se filtra en los outputs/agrupaciones)
+    mapa_ok_num = mapa_ok_num[mapa_ok_num["section_code"].astype(str).str.strip() != "OTR"].copy()
+
     num_cols = [c for c in df.columns if str(c).endswith("_num")]
     if not num_cols:
         st.warning("No encontré columnas *_num en PROCESADO.")
@@ -865,78 +421,52 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
     if fecha_col and df[fecha_col].notna().any():
         years += sorted(df[fecha_col].dt.year.dropna().unique().astype(int).tolist(), reverse=True)
 
-    carrera_param_fija = (carrera is not None) and str(carrera).strip() != ""
     carrera_col = _best_carrera_col(df)
-    carrera_sel = "(Todas)"
 
+    # Sidebar: Año + Carrera/Servicio (SIEMPRE seleccionable, como DG)
     with st.sidebar:
-        year_sel = st.selectbox("Año", years, index=0, key="ec_year")
+        year_sel = st.selectbox("Año", years, index=0, key=f"ec_year__{vista}__{modalidad}")
 
-        if vista == "Dirección General":
-            if carrera_param_fija:
-                carrera_sel = str(carrera).strip()
-                st.text_input("Carrera/Servicio (fijo)", value=carrera_sel, disabled=True, key="ec_carrera_fija")
+        if carrera_col:
+            opts = ["(Todas)"] + sorted(df[carrera_col].dropna().astype(str).str.strip().unique().tolist())
+            # Si viene carrera por parámetro, la usamos como default si existe
+            if carrera and str(carrera).strip() in opts:
+                default_idx = opts.index(str(carrera).strip())
             else:
-                if carrera_col:
-                    opts = ["(Todas)"] + sorted(df[carrera_col].dropna().astype(str).str.strip().unique().tolist())
-                    carrera_sel = st.selectbox("Carrera/Servicio", opts, index=0, key="ec_carrera_sel")
-                else:
-                    st.info("No encontré columna válida para filtrar por Carrera/Servicio.")
-                    carrera_sel = "(Todas)"
+                default_idx = 0
+            carrera_sel = st.selectbox("Carrera/Servicio", opts, index=default_idx, key=f"ec_carrera__{vista}__{modalidad}")
         else:
-            carrera_sel = (carrera or "").strip()
-            st.text_input("Carrera (fija por vista)", value=carrera_sel, disabled=True, key="ec_dc_carrera")
+            st.info("No encontré columna válida para filtrar por Carrera/Servicio.")
+            carrera_sel = "(Todas)"
+
+        # Secciones visibles (muestra SOLO las secciones reales del mapa; sin OTR)
+        sec_vis = (
+            mapa_ok_num[["section_code", "section_name"]]
+            .dropna()
+            .drop_duplicates()
+            .sort_values(["section_name"])
+        )
+        if not sec_vis.empty:
+            st.caption("**Secciones visibles en esta modalidad:**")
+            st.write(" • " + "\n • ".join(sec_vis["section_name"].astype(str).tolist()))
 
         st.divider()
 
+    # Aplicación de filtros
     f = df.copy()
+
     if year_sel != "(Todos)" and fecha_col:
         f = f[f[fecha_col].dt.year == int(year_sel)]
 
-    if vista == "Dirección General":
-        if carrera_param_fija:
-            if carrera_col:
-                f = f[f[carrera_col].astype(str).str.strip() == str(carrera_sel).strip()]
-            else:
-                candidates = [c for c in ["Carrera_Catalogo", "Servicio", "Selecciona el programa académico que estudias"] if c in f.columns]
-                if candidates:
-                    target = str(carrera_sel).strip()
-                    mask_any = pd.Series(False, index=f.index)
-                    for c in candidates:
-                        mask_any = mask_any | (f[c].astype(str).str.strip() == target)
-                    f = f[mask_any]
-        else:
-            if carrera_col and carrera_sel != "(Todas)":
-                f = f[f[carrera_col].astype(str).str.strip() == str(carrera_sel).strip()]
-    else:
-        if str(modalidad) != "Preparatoria":
-            candidates = [
-                c for c in [
-                    "Carrera_Catalogo",
-                    "Servicio",
-                    "Servicio de procedencia",
-                    "Selecciona el programa académico que estudias",
-                    "Programa",
-                    "Carrera",
-                ] if c in f.columns
-            ]
-            if not candidates:
-                st.warning("No encontré columnas para filtrar por carrera.")
-                st.caption(f"Columnas disponibles: {list(f.columns)}")
-                return
-            target = str(carrera_sel).strip()
-            mask = pd.Series(False, index=f.index)
-            for c in candidates:
-                mask = mask | _match_carrera_mask_dc(f[c], target)
-            f = f[mask]
+    if carrera_col and carrera_sel != "(Todas)":
+        f = f[f[carrera_col].astype(str).str.strip() == str(carrera_sel).strip()]
 
-    filename_prefix = f"encuesta_calidad_{str(modalidad).replace('/','-').replace(' ','_')}_{year_sel if year_sel!='(Todos)' else 'TODOS'}"
-    if vista == "Dirección General":
-        filename_prefix += f"_{(carrera_sel if carrera_sel!='(Todas)' else 'TODAS')}"
-    else:
-        filename_prefix += f"_{carrera_sel}"
+    if len(f) == 0:
+        st.warning("No hay registros con los filtros seleccionados.")
+        return
 
-    overall_likert = pd.to_numeric(f[likert_cols].stack(), errors="coerce").mean() if likert_cols else pd.NA
+    filename_prefix = f"encuesta_calidad_{str(modalidad).replace('/','-').replace(' ','_')}_{year_sel if year_sel!='(Todos)' else 'TODOS'}_{(carrera_sel if carrera_sel!='(Todas)' else 'TODAS')}"
+        overall_likert = pd.to_numeric(f[likert_cols].stack(), errors="coerce").mean() if likert_cols else pd.NA
     overall_yes = (pd.to_numeric(f[yesno_cols].stack(), errors="coerce").mean() * 100) if yesno_cols else pd.NA
 
     kpis = pd.DataFrame(
@@ -953,10 +483,8 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
     _download_buttons_body(f, filename_prefix=filename_prefix, kpis_df=kpis)
 
     st.caption(f"Hoja usada: **PROCESADO** | Registros filtrados: **{len(f)}**")
-    if len(f) == 0:
-        st.warning("No hay registros con los filtros seleccionados.")
-        return
 
+    # Tabs (comparativo SOLO cuando estás en Dirección General y con (Todas))
     if vista == "Dirección General":
         tab1, tab2, tab4, tab3 = st.tabs(["Resumen", "Por sección", "Comparativo entre carreras", "Comentarios"])
     else:
@@ -1111,7 +639,8 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
                         if chart_y is not None:
                             st.altair_chart(chart_y, use_container_width=True)
 
-                items_sec = [(sec, lbl, col) for (sec, lbl, col) in open_items_all if sec == sec_code and col in f.columns]
+                # Comentarios por sección: NO mostrar OTR y solo si hay columnas
+                items_sec = [(sec, lbl, col) for (sec, lbl, col) in open_items_all if sec == sec_code and col in f.columns and sec != "OTR"]
                 _render_open_comments_box(
                     f=f,
                     items=items_sec,
@@ -1123,11 +652,12 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
     if tab4 is not None:
         with tab4:
             st.markdown("### Comparativo entre carreras por sección")
+
             carrera_col2 = _best_carrera_col(f)
             if not carrera_col2:
                 st.warning("No se encontró columna válida de Carrera/Servicio.")
-            elif carrera_param_fija:
-                st.info("Para ver comparativo, la Carrera/Servicio debe estar en **(Todas)**.")
+            elif carrera_sel != "(Todas)":
+                st.info("Para ver comparativo, en **Carrera/Servicio** selecciona **(Todas)**.")
             else:
                 for (sec_code, sec_name), g in mapa_ok_num.groupby(["section_code", "section_name"]):
                     cols = [c for c in g["header_num"].tolist() if c in f.columns and c in likert_cols]
@@ -1175,25 +705,27 @@ def render_encuesta_calidad(vista: str | None = None, carrera: str | None = None
                         )
                         if chart is not None:
                             st.altair_chart(chart, use_container_width=True)
-
-    with tab3:
+                                with tab3:
         st.markdown("### Comentarios y respuestas abiertas")
 
         if not open_items_all:
             st.info("No hay preguntas ABIERTA configuradas en el mapa.")
             return
 
-        sec_codes = sorted({sec for (sec, _, _) in open_items_all})
+        # NO mostrar "OTR" y siempre mostrar nombre real de sección (como DG)
+        sec_codes = sorted({sec for (sec, _, _) in open_items_all if sec != "OTR"})
         sec_map_name = {code: SECTION_LABELS.get(code, code) for code in sec_codes}
 
         opts = ["(Todas)"] + [sec_map_name.get(code, code) for code in sec_codes]
         sec_sel = st.selectbox("Sección", opts, index=0, key="open_global_sec_sel")
 
         if sec_sel == "(Todas)":
-            pool = [(sec, lbl, col) for (sec, lbl, col) in open_items_all if col in f.columns]
+            pool = [(sec, lbl, col) for (sec, lbl, col) in open_items_all if col in f.columns and sec != "OTR"]
             sec_key = "ALL"
         else:
-            sec_code = next(k for k, v in sec_map_name.items() if v == sec_sel)
+            # resolver code por label
+            inv = {v: k for k, v in sec_map_name.items()}
+            sec_code = inv.get(sec_sel, sec_sel)
             pool = [(sec, lbl, col) for (sec, lbl, col) in open_items_all if sec == sec_code and col in f.columns]
             sec_key = sec_code
 
