@@ -8,8 +8,10 @@ import unicodedata
 from io import BytesIO
 from typing import Optional, List, Tuple
 
-# ===================== Config =====================
 
+# ============================================================
+# Config
+# ============================================================
 SECTION_LABELS = {
     "DIR": "Director / Coordinación",
     "SER": "Servicios administrativos y generales",
@@ -32,12 +34,17 @@ SECTION_LABELS = {
 MAX_VERTICAL_QUESTIONS = 7
 MAX_VERTICAL_SECTIONS = 7
 
+# En Finanzas NO usamos PROCESADO; usamos V_DF
+SHEET_DF = "V_DF"
 SHEET_MAPA = "MAPA_PREGUNTAS"
 
-# ===================== Utils =====================
 
+# ============================================================
+# Utils
+# ============================================================
 def _to_datetime_safe(s):
     return pd.to_datetime(s, errors="coerce", dayfirst=True)
+
 
 def _wrap_text(s: str, width: int = 18, max_lines: int = 3) -> str:
     if s is None or (isinstance(s, float) and pd.isna(s)):
@@ -52,8 +59,10 @@ def _wrap_text(s: str, width: int = 18, max_lines: int = 3) -> str:
     kept[-1] = (kept[-1][:-1] + "…") if len(kept[-1]) >= 1 else "…"
     return "\n".join(kept)
 
+
 def _mean_numeric(series: pd.Series):
     return pd.to_numeric(series, errors="coerce").mean()
+
 
 def _norm_txt(x: str) -> str:
     if x is None:
@@ -63,11 +72,13 @@ def _norm_txt(x: str) -> str:
     s = " ".join(s.split())
     return s
 
+
 def _pick_fecha_col(df: pd.DataFrame) -> Optional[str]:
     for c in ["Marca temporal", "Marca Temporal", "Fecha", "fecha", "timestamp", "Timestamp"]:
         if c in df.columns:
             return c
     return None
+
 
 def _best_carrera_col(df: pd.DataFrame) -> Optional[str]:
     candidates = [
@@ -88,66 +99,40 @@ def _best_carrera_col(df: pd.DataFrame) -> Optional[str]:
             return c
     return None
 
-def _best_modalidad_col(df: pd.DataFrame) -> Optional[str]:
-    candidates = [
-        "Modalidad",
-        "modalidad",
-        "Tipo de modalidad",
-        "Modalidad de estudio",
-        "Modalidad (Virtual/Escolarizado/Prepa)",
-    ]
-    for c in candidates:
-        if c in df.columns:
-            vals = df[c].dropna().astype(str).str.strip()
-            if vals.nunique() >= 2:
-                return c
-    for c in candidates:
-        if c in df.columns:
-            return c
-    return None
 
-def _modalidad_mask(df: pd.DataFrame, modalidad: str, modalidad_col: Optional[str], carrera_col: Optional[str]) -> pd.Series:
-    sel = _norm_txt(modalidad)
+def _auto_classify_numcols(df: pd.DataFrame, cols: List[str]) -> Tuple[List[str], List[str]]:
+    """
+    Clasifica *_num en:
+      - likert: max > 1
+      - yesno: resto (0/1)
+    """
+    if not cols:
+        return [], []
+    dnum = df[cols].apply(pd.to_numeric, errors="coerce")
+    dnum = dnum.loc[:, ~dnum.columns.duplicated()]
+    maxs = dnum.max(axis=0, skipna=True)
 
-    if sel == _norm_txt("Preparatoria"):
-        m = pd.Series(False, index=df.index)
-        if modalidad_col and modalidad_col in df.columns:
-            v = df[modalidad_col].astype(str).map(_norm_txt)
-            m = m | v.eq("preparatoria") | v.str.contains("prepa", na=False)
-        if carrera_col and carrera_col in df.columns:
-            v2 = df[carrera_col].astype(str).map(_norm_txt)
-            m = m | v2.eq("preparatoria") | v2.str.contains("prepa", na=False)
-        return m
+    likert_cols = []
+    for c in cols:
+        if c not in maxs.index:
+            continue
+        v = maxs.loc[c]
+        if pd.notna(v) and float(v) > 1.0:
+            likert_cols.append(c)
 
-    if modalidad_col and modalidad_col in df.columns:
-        v = df[modalidad_col].astype(str).map(_norm_txt)
-        if sel == _norm_txt("Virtual / Mixto"):
-            return v.str.contains("virtual", na=False) | v.str.contains("mixto", na=False) | v.str.contains("hibrid", na=False)
-        return v.str.contains("escolar", na=False) | v.str.contains("ejecut", na=False)
+    yesno_cols = [c for c in cols if c not in likert_cols]
+    return likert_cols, yesno_cols
 
-    if carrera_col and carrera_col in df.columns:
-        v2 = df[carrera_col].astype(str).map(_norm_txt)
-        if sel == _norm_txt("Virtual / Mixto"):
-            return v2.str.contains("virtual", na=False) | v2.str.contains("mixto", na=False)
-        return (~(v2.eq("preparatoria") | v2.str.contains("prepa", na=False)))
 
-    return pd.Series(True, index=df.index)
-
-def _get_url_for_modalidad(modalidad: str) -> str:
-    URL_KEYS = {
-        "Virtual / Mixto": "EC_VIRTUAL_URL",
-        "Escolarizado / Ejecutivas": "EC_ESCOLAR_URL",
-        "Preparatoria": "EC_PREPA_URL",
-    }
-    key = URL_KEYS.get(modalidad)
-    if not key:
-        raise KeyError(f"Modalidad no reconocida: {modalidad}")
-    url = st.secrets.get(key, "").strip()
-    if not url:
-        raise KeyError(f"Falta configurar {key} en Secrets.")
-    return url
-
+# ============================================================
+# MAPA
+# ============================================================
 def _normalize_mapa_to_expected_schema(mapa: pd.DataFrame) -> pd.DataFrame:
+    """
+    Acepta dos esquemas:
+      A) ya normalizado: header_exacto, scale_code, header_num (+ opcionales section_code/section_name)
+      B) raw: header_raw, header_id, tipo (+ opcionales section_code/section_name)
+    """
     m = mapa.copy()
     cols = set(m.columns)
 
@@ -182,6 +167,7 @@ def _normalize_mapa_to_expected_schema(mapa: pd.DataFrame) -> pd.DataFrame:
 
     return m
 
+
 def _prepare_mapa(mapa: pd.DataFrame) -> pd.DataFrame:
     mapa = _normalize_mapa_to_expected_schema(mapa)
     required_cols = {"header_exacto", "scale_code", "header_num"}
@@ -204,23 +190,6 @@ def _prepare_mapa(mapa: pd.DataFrame) -> pd.DataFrame:
     mapa["section_name"] = mapa["section_name"].astype(str)
     return mapa
 
-def _auto_classify_numcols(df: pd.DataFrame, cols: List[str]) -> Tuple[List[str], List[str]]:
-    if not cols:
-        return [], []
-    dnum = df[cols].apply(pd.to_numeric, errors="coerce")
-    dnum = dnum.loc[:, ~dnum.columns.duplicated()]
-    maxs = dnum.max(axis=0, skipna=True)
-
-    likert_cols = []
-    for c in cols:
-        if c not in maxs.index:
-            continue
-        v = maxs.loc[c]
-        if pd.notna(v) and float(v) > 1.0:
-            likert_cols.append(c)
-
-    yesno_cols = [c for c in cols if c not in likert_cols]
-    return likert_cols, yesno_cols
 
 def _resolve_open_cols_from_mapa(m_open: pd.DataFrame) -> List[Tuple[str, str, str]]:
     out: List[Tuple[str, str, str]] = []
@@ -234,6 +203,10 @@ def _resolve_open_cols_from_mapa(m_open: pd.DataFrame) -> List[Tuple[str, str, s
             out.append((sec, lbl, col))
     return out
 
+
+# ============================================================
+# Charts / Open comments UI
+# ============================================================
 def _render_open_comments_box(*, f: pd.DataFrame, items: List[Tuple[str, str, str]], sec_code: str, title: str, key_prefix: str):
     if not items:
         st.caption("Sin preguntas ABIERTA en esta sección.")
@@ -262,6 +235,7 @@ def _render_open_comments_box(*, f: pd.DataFrame, items: List[Tuple[str, str, st
 
     st.caption(f"Comentarios encontrados: **{len(textos)}**")
     st.dataframe(pd.DataFrame({sel_lbl: textos.reset_index(drop=True)}), use_container_width=True)
+
 
 def _bar_chart_auto(
     df_in: pd.DataFrame,
@@ -318,6 +292,10 @@ def _bar_chart_auto(
         .properties(height=dynamic_height)
     )
 
+
+# ============================================================
+# Export
+# ============================================================
 def _create_excel_download(df: pd.DataFrame, kpis_df: Optional[pd.DataFrame], filename: str):
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
@@ -333,6 +311,7 @@ def _create_excel_download(df: pd.DataFrame, kpis_df: Optional[pd.DataFrame], fi
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
     )
+
 
 def _download_buttons_body(df: pd.DataFrame, filename_prefix: str, kpis_df: Optional[pd.DataFrame] = None):
     if df is None or getattr(df, "empty", True):
@@ -356,62 +335,27 @@ def _download_buttons_body(df: pd.DataFrame, filename_prefix: str, kpis_df: Opti
 
     st.markdown("---")
 
-# ===================== Loaders (DF + MAPA) =====================
 
-def _norm_sheet_title(x: str) -> str:
-    return str(x).strip().lower().replace(" ", "").replace("_", "")
+# ============================================================
+# Data loading (reusa las mismas URLs EC_*_URL en Secrets)
+# ============================================================
+def _get_url_for_modalidad(modalidad: str) -> str:
+    URL_KEYS = {
+        "Virtual / Mixto": "EC_VIRTUAL_URL",
+        "Escolarizado / Ejecutivas": "EC_ESCOLAR_URL",
+        "Preparatoria": "EC_PREPA_URL",
+    }
+    key = URL_KEYS.get(modalidad)
+    if not key:
+        raise KeyError(f"Modalidad no reconocida: {modalidad}")
+    url = st.secrets.get(key, "").strip()
+    if not url:
+        raise KeyError(f"Falta configurar {key} en Secrets.")
+    return url
 
-def _get_df_config_for_modalidad(mod: str) -> tuple[str, str]:
-    mod = str(mod).strip()
-
-    if mod == "Virtual / Mixto":
-        sid = st.secrets.get("DF_VIRTUAL_SHEET_ID", "").strip()
-        sname = st.secrets.get("DF_VIRTUAL_SHEET_NAME", "").strip() or "V_DF"
-        key_name = "DF_VIRTUAL_SHEET_ID"
-    elif mod == "Escolarizado / Ejecutivas":
-        sid = st.secrets.get("DF_ESCOLAR_SHEET_ID", "").strip()
-        sname = st.secrets.get("DF_ESCOLAR_SHEET_NAME", "").strip() or "V_DF"
-        key_name = "DF_ESCOLAR_SHEET_ID"
-    elif mod == "Preparatoria":
-        sid = st.secrets.get("DF_PREPA_SHEET_ID", "").strip()
-        sname = st.secrets.get("DF_PREPA_SHEET_NAME", "").strip() or "V_DF"
-        key_name = "DF_PREPA_SHEET_ID"
-    else:
-        raise KeyError(f"Modalidad no reconocida: {mod}")
-
-    if not sid:
-        raise KeyError(f"Falta configurar {key_name} en Secrets.")
-    return sid, sname
 
 @st.cache_data(show_spinner=False, ttl=300)
-def _load_df_sheet(mod: str) -> pd.DataFrame:
-    sa = dict(st.secrets["gcp_service_account_json"])
-    gc = gspread.service_account_from_dict(sa)
-
-    sheet_id, sheet_name = _get_df_config_for_modalidad(mod)
-    sh = gc.open_by_key(sheet_id)
-
-    titles = [ws.title for ws in sh.worksheets()]
-    titles_norm = {_norm_sheet_title(t): t for t in titles}
-    resolved = titles_norm.get(_norm_sheet_title(sheet_name))
-
-    if not resolved:
-        raise ValueError(
-            f"No encontré la pestaña '{sheet_name}' en DF para modalidad '{mod}'. "
-            f"Disponibles: {', '.join(titles)}"
-        )
-
-    ws = sh.worksheet(resolved)
-    values = ws.get_all_values()
-    if not values:
-        return pd.DataFrame()
-
-    headers = [h.strip() for h in values[0]]
-    rows = values[1:]
-    return pd.DataFrame(rows, columns=headers).replace("", pd.NA)
-
-@st.cache_data(show_spinner=False, ttl=300)
-def _load_mapa_only_from_ec_url(url: str) -> pd.DataFrame:
+def _load_vdf_and_mapa_by_url(url: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     sa = dict(st.secrets["gcp_service_account_json"])
     gc = gspread.service_account_from_dict(sa)
     sh = gc.open_by_url(url)
@@ -421,26 +365,49 @@ def _load_mapa_only_from_ec_url(url: str) -> pd.DataFrame:
 
     titles = [ws.title for ws in sh.worksheets()]
     titles_norm = {norm(t): t for t in titles}
-    resolved = titles_norm.get(norm(SHEET_MAPA))
-    if not resolved:
-        raise ValueError(f"No encontré pestaña {SHEET_MAPA}. Disponibles: {', '.join(titles)}")
 
-    ws = sh.worksheet(resolved)
-    values = ws.get_all_values()
-    if not values:
-        return pd.DataFrame()
+    def resolve(sheet_name: str) -> Optional[str]:
+        return titles_norm.get(norm(sheet_name))
 
-    headers = [h.strip() for h in values[0]]
-    rows = values[1:]
-    return pd.DataFrame(rows, columns=headers).replace("", pd.NA)
+    ws_df = resolve(SHEET_DF)
+    ws_map = resolve(SHEET_MAPA)
 
-# ===================== UI / Main =====================
+    missing = []
+    if not ws_df:
+        missing.append(SHEET_DF)
+    if not ws_map:
+        missing.append(SHEET_MAPA)
+    if missing:
+        raise ValueError("No encontré pestañas: " + ", ".join(missing) + " | Disponibles: " + ", ".join(titles))
 
-def render_encuesta_calidad_f():
-    st.subheader("Encuesta de calidad_F")
+    def ws_to_df(ws_title: str) -> pd.DataFrame:
+        ws = sh.worksheet(ws_title)
+        values = ws.get_all_values()
+        if not values:
+            return pd.DataFrame()
+        headers = [h.strip() for h in values[0]]
+        rows = values[1:]
+        return pd.DataFrame(rows, columns=headers).replace("", pd.NA)
 
+    df = ws_to_df(ws_df)
+    mapa = ws_to_df(ws_map)
+    return df, mapa
+
+
+# ============================================================
+# Main render
+# ============================================================
+def render_encuesta_calidad_f(vista: Optional[str] = None, carrera: Optional[str] = None):
+    """
+    Módulo espejo DG pero fuente = V_DF + MAPA_PREGUNTAS.
+    - No depende de PROCESADO.
+    - Modalidad seleccionable (3 sheets distintos por URL).
+    """
+    st.subheader("Encuesta de calidad — Finanzas")
+
+    # Sidebar: Modalidad
     with st.sidebar:
-        st.markdown("### Filtros — Encuesta de calidad_F")
+        st.markdown("### Filtros — Encuesta de calidad (Finanzas)")
         modalidad = st.selectbox(
             "Modalidad",
             ["Virtual / Mixto", "Escolarizado / Ejecutivas", "Preparatoria"],
@@ -448,89 +415,83 @@ def render_encuesta_calidad_f():
             key="ecf_modalidad",
         )
 
-    # Cargar DF + MAPA
+    # Load data
     try:
         url = _get_url_for_modalidad(str(modalidad))
-        with st.spinner("Cargando base DF…"):
-            df = _load_df_sheet(str(modalidad))
-        with st.spinner("Cargando MAPA_PREGUNTAS…"):
-            mapa_raw = _load_mapa_only_from_ec_url(url)
-            mapa = _prepare_mapa(mapa_raw)
+        with st.spinner("Cargando datos (Google Sheets)…"):
+            df, mapa = _load_vdf_and_mapa_by_url(url)
     except Exception as e:
-        st.error("No se pudieron cargar DF o MAPA_PREGUNTAS.")
+        st.error("No se pudieron cargar V_DF o MAPA_PREGUNTAS.")
         st.exception(e)
         return
 
     if df is None or df.empty:
-        st.warning("La base DF está vacía.")
+        st.warning("La hoja V_DF está vacía.")
         return
 
     fecha_col = _pick_fecha_col(df)
     if fecha_col:
         df[fecha_col] = _to_datetime_safe(df[fecha_col])
 
-    # Filtrado por modalidad (por si DF trae mezcla)
-    carrera_col = _best_carrera_col(df)
-    modalidad_col = _best_modalidad_col(df)
-    base = df.copy()
-    base = base[_modalidad_mask(base, str(modalidad), modalidad_col, carrera_col)]
-
-    if len(base) == 0:
-        st.warning("No hay registros para la modalidad seleccionada.")
+    try:
+        mapa = _prepare_mapa(mapa)
+    except Exception as e:
+        st.error("MAPA_PREGUNTAS inválido.")
+        st.exception(e)
         return
 
-    # Mapa usable vs columnas reales
-    mapa["exists"] = mapa["header_num"].isin(base.columns)
+    # Solo headers que existan en V_DF
+    mapa["exists"] = mapa["header_num"].isin(df.columns)
     mapa_ok = mapa[mapa["exists"]].copy()
 
+    # num + no abierta
     mapa_ok_num = mapa_ok[
         mapa_ok["header_num"].astype(str).str.endswith("_num")
         & (mapa_ok["scale_code"].astype(str).str.upper() != "ABIERTA")
     ].copy()
 
+    # abiertas
     mapa_ok_open = mapa_ok[mapa_ok["scale_code"].astype(str).str.upper() == "ABIERTA"].copy()
     open_items_all = _resolve_open_cols_from_mapa(mapa_ok_open)
 
-    num_cols = [c for c in base.columns if str(c).endswith("_num")]
+    # columnas numéricas
+    num_cols = [c for c in df.columns if str(c).endswith("_num")]
     if not num_cols:
-        st.warning("No encontré columnas *_num en la base DF.")
-        st.dataframe(base.head(30), use_container_width=True)
+        st.warning("No encontré columnas *_num en V_DF.")
+        st.dataframe(df.head(30), use_container_width=True)
         return
 
-    likert_cols, yesno_cols = _auto_classify_numcols(base, num_cols)
+    likert_cols, yesno_cols = _auto_classify_numcols(df, num_cols)
 
-    # Sidebar: Año + Carrera/Servicio (igual que DG)
+    # Año
     years = ["(Todos)"]
-    if fecha_col and base[fecha_col].notna().any():
-        years += sorted(base[fecha_col].dt.year.dropna().unique().astype(int).tolist(), reverse=True)
+    if fecha_col and df[fecha_col].notna().any():
+        years += sorted(df[fecha_col].dt.year.dropna().unique().astype(int).tolist(), reverse=True)
 
+    carrera_col = _best_carrera_col(df)
     carrera_sel = "(Todas)"
-    carrera_col2 = _best_carrera_col(base)
-    carreras_opts = ["(Todas)"]
-    if carrera_col2:
-        carreras_opts += sorted(base[carrera_col2].dropna().astype(str).str.strip().unique().tolist())
 
     with st.sidebar:
         year_sel = st.selectbox("Año", years, index=0, key="ecf_year")
-        if carrera_col2 and len(carreras_opts) > 1:
-            carrera_sel = st.selectbox("Carrera/Servicio", carreras_opts, index=0, key="ecf_carrera")
+
+        if carrera_col:
+            opts = ["(Todas)"] + sorted(df[carrera_col].dropna().astype(str).str.strip().unique().tolist())
+            carrera_sel = st.selectbox("Carrera/Servicio", opts, index=0, key="ecf_carrera_sel")
+        else:
+            st.info("No encontré columna válida para filtrar por Carrera/Servicio.")
+            carrera_sel = "(Todas)"
+
         st.divider()
 
-    f = base.copy()
+    # Filtrado
+    f = df.copy()
     if year_sel != "(Todos)" and fecha_col:
         f = f[f[fecha_col].dt.year == int(year_sel)]
-    if carrera_col2 and carrera_sel != "(Todas)":
-        f = f[f[carrera_col2].astype(str).str.strip() == str(carrera_sel).strip()]
 
-    if len(f) == 0:
-        st.warning("No hay registros con los filtros seleccionados.")
-        return
+    if carrera_col and carrera_sel != "(Todas)":
+        f = f[f[carrera_col].astype(str).str.strip() == str(carrera_sel).strip()]
 
-    # KPIs + Export
-    filename_prefix = (
-        f"encuesta_calidad_F_{str(modalidad).replace('/','-').replace(' ','_')}_"
-        f"{year_sel if year_sel!='(Todos)' else 'TODOS'}_{(carrera_sel if carrera_sel!='(Todas)' else 'TODAS')}"
-    )
+    filename_prefix = f"encuesta_calidad_f_{str(modalidad).replace('/','-').replace(' ','_')}_{year_sel if year_sel!='(Todos)' else 'TODOS'}_{(carrera_sel if carrera_sel!='(Todas)' else 'TODAS')}"
 
     overall_likert = pd.to_numeric(f[likert_cols].stack(), errors="coerce").mean() if likert_cols else pd.NA
     overall_yes = (pd.to_numeric(f[yesno_cols].stack(), errors="coerce").mean() * 100) if yesno_cols else pd.NA
@@ -548,17 +509,20 @@ def render_encuesta_calidad_f():
 
     _download_buttons_body(f, filename_prefix=filename_prefix, kpis_df=kpis)
 
-    st.caption(f"Fuente: **DF** | MAPA: **MAPA_PREGUNTAS** | Registros filtrados: **{len(f)}**")
+    st.caption(f"Hoja usada: **V_DF** | Registros filtrados: **{len(f)}**")
+    if len(f) == 0:
+        st.warning("No hay registros con los filtros seleccionados.")
+        return
 
-    # Tabs (igual que DG)
+    # Tabs (idénticas DG)
     tab1, tab2, tab4, tab3 = st.tabs(["Resumen", "Por sección", "Comparativo entre carreras", "Comentarios"])
 
-    # ===================== TAB 1 =====================
+    # -------------------- TAB 1: Resumen --------------------
     with tab1:
         c1, c2, c3 = st.columns(3)
         c1.metric("Respuestas", f"{len(f)}")
-        c2.metric("Promedio global (Likert)", f"{float(overall_likert):.2f}" if pd.notna(overall_likert) else "—")
-        c3.metric("% Sí (Sí/No)", f"{float(overall_yes):.1f}%" if pd.notna(overall_yes) else "—")
+        c2.metric("Promedio global (Likert)", f"{float(overall_likert):.2f}" if (likert_cols and pd.notna(overall_likert)) else "—")
+        c3.metric("% Sí (Sí/No)", f"{float(overall_yes):.1f}%" if (yesno_cols and pd.notna(overall_yes)) else "—")
 
         st.divider()
         st.markdown("### Promedio por sección (Likert)")
@@ -599,7 +563,7 @@ def render_encuesta_calidad_f():
             if sec_chart is not None:
                 st.altair_chart(sec_chart, use_container_width=True)
 
-    # ===================== TAB 2 =====================
+    # -------------------- TAB 2: Por sección --------------------
     with tab2:
         st.markdown("### Desglose por sección (preguntas)")
 
@@ -696,21 +660,17 @@ def render_encuesta_calidad_f():
                             st.altair_chart(chart_y, use_container_width=True)
 
                 items_sec = [(sec, lbl, col) for (sec, lbl, col) in open_items_all if sec == sec_code and col in f.columns]
-                _render_open_comments_box(
-                    f=f,
-                    items=items_sec,
-                    sec_code=sec_code,
-                    title="Comentarios de esta sección",
-                    key_prefix="ecf_open_sec",
-                )
+                _render_open_comments_box(f=f, items=items_sec, sec_code=sec_code, title="Comentarios de esta sección", key_prefix="openf_sec")
 
-    # ===================== TAB 4 =====================
+    # -------------------- TAB 4: Comparativo --------------------
     with tab4:
         st.markdown("### Comparativo entre carreras por sección")
 
-        carrera_col_cmp = _best_carrera_col(f)
-        if not carrera_col_cmp:
+        carrera_col2 = _best_carrera_col(f)
+        if not carrera_col2:
             st.warning("No se encontró columna válida de Carrera/Servicio.")
+        elif carrera_sel != "(Todas)":
+            st.info("Para ver comparativo, la Carrera/Servicio debe estar en **(Todas)**.")
         else:
             for (sec_code, sec_name), g in mapa_ok_num.groupby(["section_code", "section_name"]):
                 cols = [c for c in g["header_num"].tolist() if c in f.columns and c in likert_cols]
@@ -718,17 +678,19 @@ def render_encuesta_calidad_f():
                     continue
 
                 rows = []
-                for carrera_val, df_c in f.groupby(carrera_col_cmp):
+                for carrera_val, df_c in f.groupby(carrera_col2):
                     vals = pd.to_numeric(df_c[cols].stack(), errors="coerce")
                     mean_val = vals.mean()
                     if pd.isna(mean_val):
                         continue
-                    rows.append({
-                        "Carrera/Servicio": str(carrera_val).strip(),
-                        "Promedio": round(float(mean_val), 2),
-                        "Respuestas": int(len(df_c)),
-                        "Preguntas": int(len(cols)),
-                    })
+                    rows.append(
+                        {
+                            "Carrera/Servicio": str(carrera_val).strip(),
+                            "Promedio": round(float(mean_val), 2),
+                            "Respuestas": int(len(df_c)),
+                            "Preguntas": int(len(cols)),
+                        }
+                    )
 
                 if not rows:
                     continue
@@ -757,7 +719,7 @@ def render_encuesta_calidad_f():
                     if chart is not None:
                         st.altair_chart(chart, use_container_width=True)
 
-    # ===================== TAB 3 =====================
+    # -------------------- TAB 3: Comentarios --------------------
     with tab3:
         st.markdown("### Comentarios y respuestas abiertas")
 
@@ -769,7 +731,7 @@ def render_encuesta_calidad_f():
         sec_map_name = {code: SECTION_LABELS.get(code, code) for code in sec_codes}
 
         opts = ["(Todas)"] + [sec_map_name.get(code, code) for code in sec_codes]
-        sec_sel = st.selectbox("Sección", opts, index=0, key="ecf_open_global_sec_sel")
+        sec_sel = st.selectbox("Sección", opts, index=0, key="openf_global_sec_sel")
 
         if sec_sel == "(Todas)":
             pool = [(sec, lbl, col) for (sec, lbl, col) in open_items_all if col in f.columns]
@@ -780,19 +742,19 @@ def render_encuesta_calidad_f():
             sec_key = sec_code
 
         if not pool:
-            st.warning("No encontré columnas *_txt en DF para la sección seleccionada.")
+            st.warning("No encontré columnas *_txt en V_DF para la sección seleccionada.")
             return
 
         labels = [lbl for _, lbl, _ in pool]
-        sel_lbl = st.selectbox("Campo de comentario", labels, index=0, key=f"ecf_open_global_sel_{sec_key}")
+        sel_lbl = st.selectbox("Campo de comentario", labels, index=0, key=f"openf_global_sel_{sec_key}")
         col_map = {lbl: col for _, lbl, col in pool}
         sel_col = col_map[sel_lbl]
 
         cA, cB = st.columns([2.2, 1.0])
         with cA:
-            q = st.text_input("Buscar texto (contiene)", value="", key=f"ecf_open_global_q_{sec_key}")
+            q = st.text_input("Buscar texto (contiene)", value="", key=f"openf_global_q_{sec_key}")
         with cB:
-            ver_todos = st.checkbox("Ver todos", value=False, key=f"ecf_open_global_all_{sec_key}")
+            ver_todos = st.checkbox("Ver todos", value=False, key=f"openf_global_all_{sec_key}")
 
         textos = f[sel_col].dropna().astype(str)
         textos = textos[textos.str.strip() != ""]
