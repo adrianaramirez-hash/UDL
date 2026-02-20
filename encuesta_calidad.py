@@ -255,8 +255,10 @@ def _normalize_mapa_to_expected_schema(mapa: pd.DataFrame) -> pd.DataFrame:
 
         return m
 
+    return m
 
-    def _auto_classify_numcols(df: pd.DataFrame, cols: List[str]) -> Tuple[List[str], List[str]]:
+
+def _auto_classify_numcols(df: pd.DataFrame, cols: List[str]) -> Tuple[List[str], List[str]]:
     if not cols:
         return [], []
     dnum = df[cols].apply(pd.to_numeric, errors="coerce")
@@ -479,81 +481,11 @@ def _prepare_mapa(mapa: pd.DataFrame) -> pd.DataFrame:
     return mapa
 
 
-# ===================== DF (Dirección Finanzas) helpers =====================
-
-def _norm_sheet_title(x: str) -> str:
-    return str(x).strip().lower().replace(" ", "").replace("_", "")
-
-
-def _get_df_config_for_modalidad(mod: str) -> tuple[str, str]:
-    """
-    Devuelve (sheet_id, sheet_name) para la modalidad DF.
-    Requiere estas keys en Secrets:
-      - DF_VIRTUAL_SHEET_ID, DF_VIRTUAL_SHEET_NAME   (default sheet_name: V_DF)
-      - DF_ESCOLAR_SHEET_ID, DF_ESCOLAR_SHEET_NAME   (default sheet_name: V_DF)
-      - DF_PREPA_SHEET_ID,  DF_PREPA_SHEET_NAME      (default sheet_name: V_DF)
-    """
-    mod = str(mod).strip()
-
-    if mod == "Virtual / Mixto":
-        sid = st.secrets.get("DF_VIRTUAL_SHEET_ID", "").strip()
-        sname = st.secrets.get("DF_VIRTUAL_SHEET_NAME", "").strip() or "V_DF"
-        key_name = "DF_VIRTUAL_SHEET_ID"
-    elif mod == "Escolarizado / Ejecutivas":
-        sid = st.secrets.get("DF_ESCOLAR_SHEET_ID", "").strip()
-        sname = st.secrets.get("DF_ESCOLAR_SHEET_NAME", "").strip() or "V_DF"
-        key_name = "DF_ESCOLAR_SHEET_ID"
-    elif mod == "Preparatoria":
-        sid = st.secrets.get("DF_PREPA_SHEET_ID", "").strip()
-        sname = st.secrets.get("DF_PREPA_SHEET_NAME", "").strip() or "V_DF"
-        key_name = "DF_PREPA_SHEET_ID"
-    else:
-        raise KeyError(f"Modalidad no reconocida: {mod}")
-
-    if not sid:
-        raise KeyError(f"Falta configurar {key_name} en Secrets.")
-    return sid, sname
-
-
-@st.cache_data(show_spinner=False, ttl=300)
-def _load_df_sheet_df(mod: str) -> pd.DataFrame:
-    sa = dict(st.secrets["gcp_service_account_json"])
-    gc = gspread.service_account_from_dict(sa)
-
-    sheet_id, sheet_name = _get_df_config_for_modalidad(mod)
-
-    sh = gc.open_by_key(sheet_id)
-    titles = [ws.title for ws in sh.worksheets()]
-    titles_norm = {_norm_sheet_title(t): t for t in titles}
-
-    return m
-
-
-
-
-    resolved = titles_norm.get(_norm_sheet_title(sheet_name))
-    if not resolved:
-        raise ValueError(
-            f"No encontré la pestaña '{sheet_name}' en DF para modalidad '{mod}'. "
-            f"Disponibles: {', '.join(titles)}"
-        )
-
-    ws = sh.worksheet(resolved)
-    values = ws.get_all_values()
-    if not values:
-        return pd.DataFrame()
-
-    headers = [h.strip() for h in values[0]]
-    rows = values[1:]
-    return pd.DataFrame(rows, columns=headers).replace("", pd.NA)
-
-
-# ---- A PARTIR DE AQUÍ YA NO VA DENTRO DE _load_df_sheet_df; VA DENTRO DE render_encuesta_calidad ----
 def render_encuesta_calidad(vista: Optional[str] = None, carrera: Optional[str] = None):
     st.subheader("Encuesta de calidad")
     vista = (vista or "Dirección General").strip()
 
-    # (Aquí arriba va tu bloque DF "if vista == 'Dirección Finanzas': ... return")
+    # IMPORTANTE: aquí ya NO existe "Dirección Finanzas". Se maneja en el módulo nuevo Encuesta de calidad_F.
 
     modalidad = _resolver_modalidad_auto(vista, carrera) if vista != "Dirección General" else None
 
@@ -753,7 +685,7 @@ def render_encuesta_calidad(vista: Optional[str] = None, carrera: Optional[str] 
             if sec_chart is not None:
                 st.altair_chart(sec_chart, use_container_width=True)
 
- with tab2:
+    with tab2:
         st.markdown("### Desglose por sección (preguntas)")
 
         rows = []
@@ -871,7 +803,12 @@ def render_encuesta_calidad(vista: Optional[str] = None, carrera: Optional[str] 
                         mean_val = vals.mean()
                         if pd.isna(mean_val):
                             continue
-                        rows.append({"Carrera/Servicio": str(carrera_val).strip(), "Promedio": round(float(mean_val), 2), "Respuestas": int(len(df_c)), "Preguntas": int(len(cols))})
+                        rows.append({
+                            "Carrera/Servicio": str(carrera_val).strip(),
+                            "Promedio": round(float(mean_val), 2),
+                            "Respuestas": int(len(df_c)),
+                            "Preguntas": int(len(cols)),
+                        })
 
                     if not rows:
                         continue
