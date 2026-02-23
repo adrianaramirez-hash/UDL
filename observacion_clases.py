@@ -22,7 +22,7 @@ def cargar_datos_desde_sheets(_refresh_key: int = 0):
 
     sheet_url = st.secrets.get("OC_SHEET_URL", "").strip()
     if not sheet_url:
-        raise KeyError("Falta configurar OC_SHEET_URL en Secrets.")
+        raise KeyError("Falta configurar OC_SHEET_URL en Secrets (URL del Google Sheet).")
 
     sh = client.open_by_url(sheet_url)
 
@@ -181,8 +181,36 @@ def render_observacion_clases(vista: str = "Dirección General", carrera: str | 
     df_respuestas["Total_puntos_observación"] = df_respuestas.apply(calcular_total_puntos_fila, axis=1)
     df_respuestas["Clasificación_observación"] = df_respuestas["Total_puntos_observación"].apply(clasificar_por_puntos)
 
-    excluir_sin_corte = st.sidebar.checkbox("Excluir 'Sin corte'", value=True)
-    excluir_fecha_invalida = st.sidebar.checkbox("Excluir fecha inválida", value=True)
+    NUM_REACTIVOS = len(cols_puntaje)
+    PUNTAJE_MAX_REACTIVO = 3
+    PUNTAJE_MAX_OBS = NUM_REACTIVOS * PUNTAJE_MAX_REACTIVO if NUM_REACTIVOS > 0 else 0
+
+    with st.expander("ℹ️ ¿Cómo se calcula el puntaje y la clasificación?", expanded=False):
+        if PUNTAJE_MAX_OBS > 0:
+            st.markdown(
+                f"""
+**Instrumento de observación**
+
+- Número de reactivos evaluados: **{NUM_REACTIVOS}**  
+- Puntaje por respuesta:
+  - **Sí** → 3 puntos  
+  - **Sin evidencia** → 2 puntos  
+  - **No** → 1 punto  
+
+- Puntaje máximo por observación (si se contestan todos los reactivos):  
+  **{PUNTAJE_MAX_OBS} puntos**
+
+**Clasificación (observación y docente)**  
+
+- **Consolidado** → 97 puntos o más  
+- **En proceso** → de 76 a 96 puntos  
+- **No consolidado** → 75 puntos o menos  
+
+En el caso de los **docentes**, se usa el **promedio de puntos por observación** dentro del filtro seleccionado.
+"""
+            )
+        else:
+            st.write("No fue posible calcular el puntaje máximo porque no se detectaron columnas de rúbrica.")
 
     opciones_cortes = ["Todos los cortes"]
     if not df_cortes.empty and "Corte" in df_cortes.columns:
@@ -193,23 +221,17 @@ def render_observacion_clases(vista: str = "Dirección General", carrera: str | 
     corte_seleccionado = st.sidebar.selectbox("Corte", opciones_cortes)
 
     df_para_filtros = df_respuestas.copy()
-    if excluir_fecha_invalida:
-        df_para_filtros = df_para_filtros[df_para_filtros[col_fecha].notna()]
-    if excluir_sin_corte:
-        df_para_filtros = df_para_filtros[df_para_filtros["Corte"] != "Sin corte"]
     if corte_seleccionado != "Todos los cortes":
         df_para_filtros = df_para_filtros[df_para_filtros["Corte"] == corte_seleccionado]
     if carrera_norm:
         df_para_filtros = df_para_filtros[df_para_filtros["Servicio_norm"] == carrera_norm]
 
     servicios_base = sorted(df_para_filtros[COL_SERVICIO].dropna().unique().tolist())
-
     if carrera_norm:
         st.sidebar.markdown(f"**Servicio:** {carrera} (Director de carrera)")
         servicio_seleccionado = "(director)"
     else:
-        servicios_disponibles = ["Todos los servicios"] + servicios_base
-        servicio_seleccionado = st.sidebar.selectbox("Servicio", servicios_disponibles)
+        servicio_seleccionado = st.sidebar.selectbox("Servicio", ["Todos los servicios"] + servicios_base)
 
     tipo_obs_col = None
     if "Tipo de observación" in df_respuestas.columns:
@@ -224,12 +246,6 @@ def render_observacion_clases(vista: str = "Dirección General", carrera: str | 
         tipo_seleccionado = "Todos los tipos"
 
     df_filtrado = df_respuestas.copy()
-
-    if excluir_fecha_invalida:
-        df_filtrado = df_filtrado[df_filtrado[col_fecha].notna()]
-    if excluir_sin_corte:
-        df_filtrado = df_filtrado[df_filtrado["Corte"] != "Sin corte"]
-
     if corte_seleccionado != "Todos los cortes":
         df_filtrado = df_filtrado[df_filtrado["Corte"] == corte_seleccionado]
 
@@ -244,27 +260,6 @@ def render_observacion_clases(vista: str = "Dirección General", carrera: str | 
     if df_filtrado.empty:
         st.warning("No hay observaciones para el filtro seleccionado.")
         st.stop()
-
-    with st.expander("Diagnóstico", expanded=False):
-        n_total = len(df_respuestas)
-        n_sin_corte = (df_respuestas["Corte"] == "Sin corte").sum()
-        n_fecha_nula = df_respuestas[col_fecha].isna().sum()
-        st.write(f"Total registros: {n_total}")
-        st.write(f"Fecha inválida (no parseó): {n_fecha_nula}")
-        st.write(f"Sin corte: {n_sin_corte}")
-
-        if not df_cortes.empty and "Fecha_inicio" in df_cortes.columns and "Fecha_fin" in df_cortes.columns:
-            min_corte = df_cortes["Fecha_inicio"].min()
-            max_corte = df_cortes["Fecha_fin"].max()
-            if pd.notna(min_corte) and pd.notna(max_corte):
-                n_fuera = df_respuestas[
-                    df_respuestas[col_fecha].notna()
-                    & ((df_respuestas[col_fecha] < min_corte) | (df_respuestas[col_fecha] > max_corte))
-                ].shape[0]
-                st.write(f"Fuera de rango de cortes ({min_corte.date()} a {max_corte.date()}): {n_fuera}")
-
-        cols_dbg = [c for c in [col_fecha, "Corte", COL_SERVICIO, COL_DOCENTE] if c in df_respuestas.columns]
-        st.dataframe(df_respuestas[df_respuestas["Corte"] == "Sin corte"][cols_dbg].tail(10), use_container_width=True)
 
     rango_fechas = df_filtrado[col_fecha].agg(["min", "max"])
     st.caption(
@@ -295,12 +290,8 @@ def render_observacion_clases(vista: str = "Dirección General", carrera: str | 
     )
 
     with tab_resumen:
+        st.subheader("Evolución de la clasificación por corte")
         df_trend = df_respuestas.copy()
-
-        if excluir_fecha_invalida:
-            df_trend = df_trend[df_trend[col_fecha].notna()]
-        if excluir_sin_corte:
-            df_trend = df_trend[df_trend["Corte"] != "Sin corte"]
 
         if carrera_norm:
             df_trend = df_trend[df_trend["Servicio_norm"] == carrera_norm]
@@ -312,7 +303,6 @@ def render_observacion_clases(vista: str = "Dirección General", carrera: str | 
 
         df_trend = df_trend[df_trend["Corte"] != "Sin corte"]
 
-        st.subheader("Evolución de la clasificación por corte")
         if not df_trend.empty:
             df_graf_cortes = (
                 df_trend.groupby(["Corte", "Clasificación_observación"])
@@ -443,7 +433,14 @@ def render_observacion_clases(vista: str = "Dirección General", carrera: str | 
 
             df_doc["Etiqueta_obs"] = etiqueta_base
 
-            cols_hist = [col_fecha, COL_SERVICIO, "Grupo", "Total_puntos_observación", "Clasificación_observación", "Corte"]
+            cols_hist = [
+                col_fecha,
+                COL_SERVICIO,
+                "Grupo",
+                "Total_puntos_observación",
+                "Clasificación_observación",
+                "Corte",
+            ]
             cols_hist = [c for c in cols_hist if c in df_doc.columns]
 
             st.markdown(f"**Observaciones de {docente_sel} en el filtro actual:**")
@@ -454,6 +451,7 @@ def render_observacion_clases(vista: str = "Dirección General", carrera: str | 
                 df_doc.index,
                 format_func=lambda i: df_doc.loc[i, "Etiqueta_obs"],
             )
+
             fila_obs = df_doc.loc[idx_sel]
 
             def calcular_resumen_areas(df, columnas_area):
@@ -471,8 +469,14 @@ def render_observacion_clases(vista: str = "Dirección General", carrera: str | 
             for area, columnas in AREAS.items():
                 p_tot, p_max, p_pct = calcular_resumen_areas(df_doc, columnas)
                 resumen_areas_global.append(
-                    {"Área": area, "Puntos (todas las observaciones)": p_tot, "Máx. posible": p_max, "% logro": p_pct}
+                    {
+                        "Área": area,
+                        "Puntos (todas las observaciones)": p_tot,
+                        "Máx. posible": p_max,
+                        "% logro": p_pct,
+                    }
                 )
+
             df_areas_global = pd.DataFrame(resumen_areas_global)
 
             st.subheader("Resumen por área del docente (todas las observaciones)")
@@ -501,7 +505,9 @@ def render_observacion_clases(vista: str = "Dirección General", carrera: str | 
                             puntos += p
                             max_puntos += 3
                 porcentaje = puntos * 100 / max_puntos if max_puntos > 0 else None
-                resumen_areas_obs.append({"Área": area, "Puntos": puntos, "Máx. posible": max_puntos, "% logro": porcentaje})
+                resumen_areas_obs.append(
+                    {"Área": area, "Puntos": puntos, "Máx. posible": max_puntos, "% logro": porcentaje}
+                )
 
             df_areas_obs = pd.DataFrame(resumen_areas_obs)
 
@@ -524,15 +530,26 @@ def render_observacion_clases(vista: str = "Dirección General", carrera: str | 
 
             fortalezas = obtener_texto(
                 fila_obs,
-                ["Fortalezas observadas en la sesión", "Fortalezas observadas en la sesión ", "Fortalezas"],
+                [
+                    "Fortalezas observadas en la sesión",
+                    "Fortalezas observadas en la sesión ",
+                    "Fortalezas",
+                ],
             )
             areas_op = obtener_texto(
                 fila_obs,
-                ["Áreas de oportunidad observadas en la sesión", "Areas de oportunidad observadas en la sesión", "Áreas de oportunidad"],
+                [
+                    "Áreas de oportunidad observadas en la sesión",
+                    "Areas de oportunidad observadas en la sesión",
+                    "Áreas de oportunidad",
+                ],
             )
             recom = obtener_texto(
                 fila_obs,
-                ["Recomendaciones generales para la mejora continua", "Recomendaciones generales"],
+                [
+                    "Recomendaciones generales para la mejora continua",
+                    "Recomendaciones generales",
+                ],
             )
 
             st.markdown("**Fortalezas observadas:**")
