@@ -65,7 +65,7 @@ def render_observacion_clases(vista: str = "Dirección General", carrera: str | 
     st.subheader("Observación de clases — Reportes por corte")
 
     # --------------------------------------------------
-    # USAR SIEMPRE COLUMNA 'Fecha'
+    # SIEMPRE USAR COLUMNA 'Fecha'
     # --------------------------------------------------
     if "Fecha" not in df_respuestas.columns:
         st.error("No existe la columna obligatoria 'Fecha'.")
@@ -174,7 +174,7 @@ def render_observacion_clases(vista: str = "Dirección General", carrera: str | 
     df_respuestas["Clasificación_observación"] = df_respuestas["Total_puntos_observación"].apply(clasificar)
 
     # ==================================================
-    # SIDEBAR FILTROS
+    # FILTROS EN SIDEBAR (ÚNICO CAMBIO VISUAL)
     # ==================================================
     st.sidebar.header("Filtros")
 
