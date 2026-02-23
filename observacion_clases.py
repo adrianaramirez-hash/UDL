@@ -1,13 +1,60 @@
+# ==========================================================
+# IMPORTS
+# ==========================================================
+import streamlit as st
+import pandas as pd
+import altair as alt
+import gspread
+import json
+from collections.abc import Mapping
+from google.oauth2.service_account import Credentials
+
+
+# ==========================================================
+# CONEXIÓN A GOOGLE SHEETS
+# ==========================================================
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets.readonly",
+    "https://www.googleapis.com/auth/drive.readonly",
+]
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def cargar_datos_desde_sheets():
+    raw = st.secrets["gcp_service_account_json"]
+    creds_dict = dict(raw) if isinstance(raw, Mapping) else json.loads(raw)
+
+    creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+    client = gspread.authorize(creds)
+
+    SPREADSHEET_URL = st.secrets.get("OC_SHEET_URL", "").strip()
+    if not SPREADSHEET_URL:
+        raise KeyError("Falta configurar OC_SHEET_URL en Secrets.")
+
+    sh = client.open_by_url(SPREADSHEET_URL)
+
+    ws_resp = sh.worksheet("Respuestas de formulario 1")
+    df_resp = pd.DataFrame(ws_resp.get_all_records())
+
+    ws_cortes = sh.worksheet("Cortes")
+    df_cortes = pd.DataFrame(ws_cortes.get_all_records())
+
+    return df_resp, df_cortes
+
+
+# ==========================================================
+# FUNCIÓN PRINCIPAL
+# ==========================================================
 def render_observacion_clases(vista: str = "Dirección General", carrera: str | None = None):
 
     # --------------------------------------------------
-    # CARGA DE DATOS
+    # CARGA
     # --------------------------------------------------
     try:
         with st.spinner("Cargando datos (Google Sheets)…"):
             df_respuestas, df_cortes = cargar_datos_desde_sheets()
     except Exception as e:
-        st.error("No se pudieron cargar los datos desde Google Sheets.")
+        st.error("No se pudieron cargar los datos.")
         st.exception(e)
         st.stop()
 
@@ -18,10 +65,10 @@ def render_observacion_clases(vista: str = "Dirección General", carrera: str | 
     st.subheader("Observación de clases — Reportes por corte")
 
     # --------------------------------------------------
-    # FECHA OFICIAL (SIEMPRE COLUMNA 'Fecha')
+    # USAR SIEMPRE COLUMNA 'Fecha'
     # --------------------------------------------------
     if "Fecha" not in df_respuestas.columns:
-        st.error("No se encontró la columna obligatoria 'Fecha' en la hoja.")
+        st.error("No existe la columna obligatoria 'Fecha'.")
         st.stop()
 
     df_respuestas["Fecha_dt"] = pd.to_datetime(
@@ -30,17 +77,14 @@ def render_observacion_clases(vista: str = "Dirección General", carrera: str | 
         dayfirst=True
     )
 
+    if df_respuestas["Fecha_dt"].isna().all():
+        st.error("No se pudieron convertir las fechas. Verifica formato en la columna 'Fecha'.")
+        st.stop()
+
     col_fecha = "Fecha_dt"
 
     # --------------------------------------------------
-    # VALIDACIÓN DE FECHAS
-    # --------------------------------------------------
-    if df_respuestas["Fecha_dt"].isna().all():
-        st.error("No se pudieron convertir las fechas. Verifica el formato de la columna 'Fecha'.")
-        st.stop()
-
-    # --------------------------------------------------
-    # NORMALIZACIÓN
+    # COLUMNAS CLAVE
     # --------------------------------------------------
     COL_SERVICIO = "Indica el servicio"
     COL_DOCENTE = "Nombre del docente"
@@ -75,7 +119,7 @@ def render_observacion_clases(vista: str = "Dirección General", carrera: str | 
     df_respuestas["Corte"] = df_respuestas[col_fecha].apply(asignar_corte)
 
     # --------------------------------------------------
-    # DETECCIÓN DE RÚBRICA POR NOMBRE
+    # DETECTAR RÚBRICA POR NOMBRE
     # --------------------------------------------------
     todas_cols = list(df_respuestas.columns)
 
@@ -87,7 +131,7 @@ def render_observacion_clases(vista: str = "Dirección General", carrera: str | 
         i1 = todas_cols.index(rubrica_fin)
         cols_puntaje = todas_cols[i0:i1 + 1]
     else:
-        st.error("No se pudieron detectar correctamente las columnas de rúbrica.")
+        st.error("No se pudieron detectar las columnas de rúbrica.")
         st.stop()
 
     # --------------------------------------------------
@@ -130,7 +174,7 @@ def render_observacion_clases(vista: str = "Dirección General", carrera: str | 
     df_respuestas["Clasificación_observación"] = df_respuestas["Total_puntos_observación"].apply(clasificar)
 
     # ==================================================
-    # SIDEBAR - FILTROS
+    # SIDEBAR FILTROS
     # ==================================================
     st.sidebar.header("Filtros")
 
