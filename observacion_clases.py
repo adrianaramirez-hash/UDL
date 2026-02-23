@@ -135,7 +135,12 @@ def render_observacion_clases(vista: str = "Dirección General", carrera: str | 
     # --------------------------------------------------
     # LIMPIEZA BÁSICA DE DATOS
     # --------------------------------------------------
-    col_fecha = "Fecha" if "Fecha" in df_respuestas.columns else "Marca temporal"
+    # ✅ AJUSTE 1: SIEMPRE usar la columna 'Fecha'
+    if "Fecha" not in df_respuestas.columns:
+        st.error("No se encontró la columna obligatoria 'Fecha' en la hoja de respuestas.")
+        st.stop()
+
+    col_fecha = "Fecha"  # <- forzado a 'Fecha'
     df_respuestas[col_fecha] = pd.to_datetime(
         df_respuestas[col_fecha], errors="coerce", dayfirst=True
     )
@@ -250,9 +255,10 @@ En el caso de los **docentes**, se usa el **promedio de puntos por observación*
     # --------------------------------------------------
     # FILTROS
     # --------------------------------------------------
-    st.markdown("### Filtros")
+    # ✅ AJUSTE 2: Filtros al SIDEBAR (misma lógica, solo cambia ubicación)
+    st.sidebar.markdown("## Filtros")
 
-    # Opciones de cortes
+    # Opciones de cortes (mantener como tu versión original)
     opciones_cortes = ["Todos los cortes"]
     if not df_cortes.empty and "Corte" in df_cortes.columns:
         opciones_cortes += list(df_cortes["Corte"].astype(str))
@@ -261,10 +267,7 @@ En el caso de los **docentes**, se usa el **promedio de puntos por observación*
     if "Sin corte" in df_respuestas["Corte"].unique():
         opciones_cortes.append("Sin corte")
 
-    col_f1, col_f2, col_f3 = st.columns(3)
-
-    with col_f1:
-        corte_seleccionado = st.selectbox("Corte", opciones_cortes)
+    corte_seleccionado = st.sidebar.selectbox("Corte", opciones_cortes)
 
     # Dataframe base para construir opciones de servicio
     df_para_filtros = df_respuestas.copy()
@@ -279,13 +282,11 @@ En el caso de los **docentes**, se usa el **promedio de puntos por observación*
 
     # Selección de servicio
     if carrera_norm:
-        with col_f2:
-            st.markdown(f"**Servicio:** {carrera} (vista Director de carrera)")
+        st.sidebar.markdown(f"**Servicio:** {carrera} (vista Director de carrera)")
         servicio_seleccionado = "(director)"
     else:
         servicios_disponibles = ["Todos los servicios"] + servicios_base
-        with col_f2:
-            servicio_seleccionado = st.selectbox("Servicio", servicios_disponibles)
+        servicio_seleccionado = st.sidebar.selectbox("Servicio", servicios_disponibles)
 
     # Filtro adicional opcional: tipo de observación (si existe la columna)
     tipo_obs_col = None
@@ -298,8 +299,7 @@ En el caso de los **docentes**, se usa el **promedio de puntos por observación*
         tipos_disponibles = ["Todos los tipos"] + sorted(
             df_para_filtros[tipo_obs_col].dropna().unique().tolist()
         )
-        with col_f3:
-            tipo_seleccionado = st.selectbox("Tipo de observación", tipos_disponibles)
+        tipo_seleccionado = st.sidebar.selectbox("Tipo de observación", tipos_disponibles)
     else:
         tipo_seleccionado = "Todos los tipos"
 
