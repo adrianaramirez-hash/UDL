@@ -6,3 +6,4 @@ google-auth
 altair
 openpyxl
 xlsxwriter
+plotly
