@@ -693,12 +693,19 @@ try:
         observacion_clases.render_observacion_clases(vista=vista, carrera=carrera)
 
     elif seccion == "Evaluación docente":
+        # Evaluación Docente solo aplica para Dirección General y Directores de Carrera.
+        # Dirección Finanzas tiene su propio módulo y no debe visualizar este apartado.
+        if vista == "Dirección Finanzas":
+            st.subheader("Evaluación docente")
+            st.warning("Este módulo no está disponible para Dirección Finanzas.")
+            st.caption("Dirección Finanzas solo tiene acceso a los módulos asignados para su operación.")
+            st.stop()
+
         evaluacion_docente.render_evaluacion_docente(
             vista=vista,
             carrera=carrera,
             ed_url="https://docs.google.com/spreadsheets/d/1bCQmPZ1MIZNpLKBAMYEwBrivfq_YjcxO3zN734Rgt7o/edit?gid=0#gid=0",
         )
-
     elif seccion == "Capacitaciones":
         _placeholder_en_construccion("Capacitaciones")
 
