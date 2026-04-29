@@ -25,7 +25,7 @@ COLOR_MORADO = "#7C3AED"
 
 
 # =====================================================
-# ESTILOS Y NOTAS (MEJORADOS)
+# ESTILOS
 # =====================================================
 def aplicar_estilos():
     st.markdown(
@@ -57,6 +57,35 @@ def aplicar_estilos():
             color: #6B7280;
             margin-top: 2px;
         }
+        .context-box {
+            background: #EFF6FF;
+            border-left: 5px solid #2F80ED;
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 16px;
+            color: #1F2937;
+            font-size: 0.95rem;
+        }
+        .insight-box {
+            background: #F9FAFB;
+            border-left: 5px solid #374151;
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-top: 12px;
+            margin-bottom: 16px;
+            color: #1F2937;
+            font-size: 0.95rem;
+        }
+        .note-box {
+            background: #FFF7ED;
+            border-left: 5px solid #F97316;
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin-top: 8px;
+            margin-bottom: 16px;
+            color: #374151;
+            font-size: 0.9rem;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -77,15 +106,12 @@ def kpi_card(label, value, caption="", color=COLOR_AZUL):
 
 
 def contexto_box(carrera_txt, ciclo_txt):
-    # Mejora: Diseño más claro para saber exactamente qué filtros están activos.
     st.markdown(
         f"""
-        <div style="background-color: #f0f2f6; padding: 15px; border-radius: 10px; border-left: 5px solid #2F80ED; margin-bottom: 20px;">
-            <h4 style="margin: 0; color: #1f2937;">📊 Filtros Activos del Reporte</h4>
-            <p style="margin: 5px 0 0 0;">
-                <b>Programas:</b> {carrera_txt} <br>
-                <b>Periodos:</b> {ciclo_txt}
-            </p>
+        <div class="context-box">
+            <b>Reporte filtrado por:</b><br>
+            Programa académico: <b>{carrera_txt}</b><br>
+            Ciclo: <b>{ciclo_txt}</b>
         </div>
         """,
         unsafe_allow_html=True,
@@ -93,25 +119,36 @@ def contexto_box(carrera_txt, ciclo_txt):
 
 
 def nota_promedio():
-    # Mejora: Aclaración técnica solicitada por el usuario sobre el promedio.
     st.markdown(
         """
-        <div style="background: #FFF7ED; border-left: 5px solid #F97316; padding: 12px; border-radius: 8px; font-size: 0.9rem; margin-top: 15px; margin-bottom: 15px;">
-            ⚠️ <b>Aclaración de Métricas:</b> El <b>Promedio Reprobatorio</b> mostrado se calcula 
-            <u>únicamente</u> promediando las calificaciones menores a 70. No representa el promedio general de la institución, 
-            sino el desempeño en las materias reprobadas.
+        <div class="note-box">
+            <b>Aclaración:</b> El promedio reprobatorio se calcula solo con calificaciones menores a 70.
+            No representa el promedio general de todos los alumnos.
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-def explicar_indices(kpis):
-    # Mejora: Explicación de la relación alumnos únicos vs materias reprobadas.
-    ratio = kpis['promedio_repr_por_alumno']
-    st.info(f"""
-        💡 **Análisis de Carga de Reprobación:** En los datos filtrados, hay {kpis['alumnos_unicos']} estudiantes que en total han reprobado {kpis['registros']} materias. 
-        Esto significa que, en promedio, cada alumno reprobado debe **{ratio:.1f} asignaturas**.
-    """)
+
+def bloque_lectura_simple(kpis):
+    alumnos = kpis["alumnos_unicos"]
+    registros = kpis["registros"]
+    ratio = kpis["promedio_repr_por_alumno"]
+
+    st.markdown(
+        f"""
+        <div class="insight-box">
+            <b>Cómo leer este reporte:</b><br>
+            En este filtro hay <b>{alumnos:,} alumnos</b> con al menos una materia reprobada.
+            En conjunto acumulan <b>{registros:,} materias reprobadas</b>.
+            Esto equivale a un promedio de <b>{ratio:.1f} materias reprobadas por alumno afectado</b>.
+            <br><br>
+            La prioridad operativa es revisar primero las <b>materias críticas</b>, porque ahí se pueden planear
+            asesorías, regularización o acompañamiento académico.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 # =====================================================
@@ -208,7 +245,6 @@ def _load_reprobacion_from_gsheets(url: str, sheet_name: str | None = None) -> p
         _pick_col(df, ["MATRICULA", "MATRÍCULA", "MATRICULA ALUMNO"]): "MATRICULA",
         _pick_col(df, ["ALUMNO", "NOMBRE ALUMNO", "NOMBRE_COMPLETO"]): "ALUMNO",
         _pick_col(df, ["MATERIA", "ASIGNATURA", "UNIDAD DE APRENDIZAJE"]): "MATERIA",
-        _pick_col(df, ["DOCENTE", "PROFESOR", "MAESTRO", "CATEDRATICO", "CATEDRÁTICO"]): "DOCENTE",
         _pick_col(df, ["CALIF FINAL", "CALIF_FINAL", "CALIFICACION FINAL", "CALIFICACIÓN FINAL"]): "CALIF_FINAL",
     }
 
@@ -233,7 +269,6 @@ def preparar_reprobacion(df: pd.DataFrame, umbral_reprobacion: float = 70) -> pd
         "MATRICULA": "",
         "ALUMNO": "SIN ALUMNO",
         "MATERIA": "SIN MATERIA",
-        "DOCENTE": "SIN DOCENTE",
         "CALIF_FINAL": pd.NA,
     }
 
@@ -241,7 +276,7 @@ def preparar_reprobacion(df: pd.DataFrame, umbral_reprobacion: float = 70) -> pd
         if col not in df.columns:
             df[col] = default
 
-    for c in ["CICLO", "ESCUELA", "NIVEL", "AREA", "MATRICULA", "ALUMNO", "MATERIA", "DOCENTE"]:
+    for c in ["CICLO", "ESCUELA", "NIVEL", "AREA", "MATRICULA", "ALUMNO", "MATERIA"]:
         df[c] = df[c].astype(str).str.strip()
         df[c] = df[c].replace(["nan", "None", ""], defaults.get(c, ""))
 
@@ -249,7 +284,6 @@ def preparar_reprobacion(df: pd.DataFrame, umbral_reprobacion: float = 70) -> pd
 
     df["AREA_norm"] = df["AREA"].apply(normalizar_texto)
     df["MATERIA_norm"] = df["MATERIA"].apply(normalizar_texto)
-    df["DOCENTE_norm"] = df["DOCENTE"].apply(normalizar_texto)
     df["MATRICULA_norm"] = df["MATRICULA"].astype(str).str.strip().str.lower()
 
     if df["CALIF_FINAL"].notna().any() and (df["CALIF_FINAL"] >= umbral_reprobacion).any():
@@ -265,16 +299,13 @@ def calcular_kpis(df: pd.DataFrame) -> dict:
     registros = len(df)
     alumnos_unicos = df["MATRICULA_norm"].replace("", pd.NA).dropna().nunique()
     materias_distintas = df["MATERIA"].replace("SIN MATERIA", pd.NA).dropna().nunique()
-    docentes_distintos = df["DOCENTE"].replace("SIN DOCENTE", pd.NA).dropna().nunique()
     promedio = df["CALIF_FINAL"].mean() if "CALIF_FINAL" in df.columns else pd.NA
-
     promedio_repr_por_alumno = registros / alumnos_unicos if alumnos_unicos else 0
 
     return {
         "registros": int(registros),
         "alumnos_unicos": int(alumnos_unicos),
         "materias_distintas": int(materias_distintas),
-        "docentes_distintos": int(docentes_distintos),
         "promedio": promedio,
         "promedio_repr_por_alumno": promedio_repr_por_alumno,
     }
@@ -287,7 +318,7 @@ def mostrar_kpis(kpis: dict):
         kpi_card(
             "Alumnos con reprobación",
             f"{kpis['alumnos_unicos']:,}",
-            "Alumnos únicos",
+            "Personas distintas",
             COLOR_ROJO,
         )
 
@@ -295,7 +326,7 @@ def mostrar_kpis(kpis: dict):
         kpi_card(
             "Materias reprobadas",
             f"{kpis['registros']:,}",
-            "Total de casos (alumno-materia)",
+            "Total alumno-materia",
             COLOR_NARANJA,
         )
 
@@ -312,7 +343,7 @@ def mostrar_kpis(kpis: dict):
         kpi_card(
             "Materias distintas",
             f"{kpis['materias_distintas']:,}",
-            "Asignaturas con reprobación",
+            "Asignaturas afectadas",
             COLOR_AZUL,
         )
 
@@ -322,60 +353,39 @@ def resumen_por_carrera(df: pd.DataFrame) -> pd.DataFrame:
 
     resumen = pd.DataFrame({
         "Carrera": g.size().index.astype(str),
-        "Materias reprobadas": g.size().values,
+        "Total de materias reprobadas": g.size().values,
         "Alumnos únicos con reprobación": g["MATRICULA_norm"].nunique().values,
-        "Materias distintas": g["MATERIA"].nunique().values,
-        "Docentes distintos": g["DOCENTE"].nunique().values,
+        "Materias distintas con reprobación": g["MATERIA"].nunique().values,
         "Promedio reprobatorio": g["CALIF_FINAL"].mean().values,
     })
 
-    resumen["Reprobaciones por alumno"] = (
-        resumen["Materias reprobadas"] / resumen["Alumnos únicos con reprobación"]
+    resumen["Materias reprobadas por alumno"] = (
+        resumen["Total de materias reprobadas"] / resumen["Alumnos únicos con reprobación"]
     ).replace([float("inf"), -float("inf")], 0).fillna(0)
 
+    resumen["Promedio reprobatorio"] = resumen["Promedio reprobatorio"].round(2)
+    resumen["Materias reprobadas por alumno"] = resumen["Materias reprobadas por alumno"].round(2)
+
     return resumen.sort_values(
-        ["Alumnos únicos con reprobación", "Materias reprobadas"],
+        ["Alumnos únicos con reprobación", "Total de materias reprobadas"],
         ascending=False
     ).reset_index(drop=True)
 
 
 def top_materias(df: pd.DataFrame, n: int = 10) -> pd.DataFrame:
-    # Mejora: Agrupación operativa enfocada a la acción del director.
-    g = df.groupby(["MATERIA", "DOCENTE"], dropna=False)
+    g = df.groupby("MATERIA", dropna=False)
 
     tabla = pd.DataFrame({
-        "Materia": [idx[0] for idx in g.size().index],
-        "Docente": [idx[1] for idx in g.size().index],
-        "Materias reprobadas (Casos)": g.size().values,
-        "Alumnos únicos": g["MATRICULA_norm"].nunique().values,
+        "Materia": g.size().index.astype(str),
+        "Alumnos únicos con reprobación": g["MATRICULA_norm"].nunique().values,
+        "Total de materias reprobadas": g.size().values,
         "Promedio reprobatorio": g["CALIF_FINAL"].mean().values,
     })
 
     tabla["Promedio reprobatorio"] = tabla["Promedio reprobatorio"].round(2)
 
     return tabla.sort_values(
-        ["Alumnos únicos", "Materias reprobadas (Casos)"],
-        ascending=False
-    ).head(n).reset_index(drop=True)
-
-
-def top_docentes(df: pd.DataFrame, n: int = 10) -> pd.DataFrame:
-    g = df.groupby("DOCENTE", dropna=False)
-
-    tabla = pd.DataFrame({
-        "Docente": g.size().index.astype(str),
-        "Materias reprobadas (Casos)": g.size().values,
-        "Alumnos únicos": g["MATRICULA_norm"].nunique().values,
-        "Materias distintas impartidas": g["MATERIA"].nunique().values,
-        "Promedio reprobatorio": g["CALIF_FINAL"].mean().values,
-    })
-
-    tabla["Promedio reprobatorio"] = tabla["Promedio reprobatorio"].round(2)
-
-    tabla = tabla[tabla["Docente"] != "SIN DOCENTE"]
-
-    return tabla.sort_values(
-        ["Alumnos únicos", "Materias reprobadas (Casos)"],
+        ["Alumnos únicos con reprobación", "Total de materias reprobadas"],
         ascending=False
     ).head(n).reset_index(drop=True)
 
@@ -385,8 +395,8 @@ def historico_por_ciclo(df: pd.DataFrame) -> pd.DataFrame:
 
     hist = pd.DataFrame({
         "Ciclo": g.size().index.astype(str),
-        "Materias reprobadas (Casos)": g.size().values,
-        "Alumnos únicos": g["MATRICULA_norm"].nunique().values,
+        "Alumnos únicos con reprobación": g["MATRICULA_norm"].nunique().values,
+        "Total de materias reprobadas": g.size().values,
     })
 
     hist["CICLO_NUM"] = _ciclo_sort_key(hist["Ciclo"])
@@ -395,13 +405,34 @@ def historico_por_ciclo(df: pd.DataFrame) -> pd.DataFrame:
     return hist.reset_index(drop=True)
 
 
+def distribucion_calificaciones(df: pd.DataFrame) -> pd.DataFrame:
+    base = df.copy()
+    base = base[base["CALIF_FINAL"].notna()].copy()
+
+    if base.empty:
+        return pd.DataFrame()
+
+    bins = [-1, 30, 50, 60, 70]
+    labels = ["0 a 30", "31 a 50", "51 a 60", "61 a 69"]
+
+    base["Rango"] = pd.cut(base["CALIF_FINAL"], bins=bins, labels=labels)
+
+    dist = (
+        base.groupby("Rango", observed=False)
+        .size()
+        .reset_index(name="Total de materias reprobadas")
+    )
+
+    total = dist["Total de materias reprobadas"].sum()
+    dist["Porcentaje"] = (dist["Total de materias reprobadas"] / total * 100).round(1) if total else 0
+
+    return dist
+
+
 # =====================================================
 # GRÁFICAS
 # =====================================================
 def grafica_carreras(resumen: pd.DataFrame):
-    if resumen.empty:
-        return alt.Chart(pd.DataFrame({"x": [], "y": []})).mark_bar()
-
     base = resumen.head(15).copy()
 
     chart = (
@@ -409,12 +440,12 @@ def grafica_carreras(resumen: pd.DataFrame):
         .mark_bar()
         .encode(
             y=alt.Y("Carrera:N", sort="-x", title=None),
-            x=alt.X("Alumnos únicos con reprobación:Q", title="Alumnos únicos"),
+            x=alt.X("Alumnos únicos con reprobación:Q", title="Alumnos únicos con reprobación"),
             tooltip=[
                 alt.Tooltip("Carrera:N", title="Carrera"),
                 alt.Tooltip("Alumnos únicos con reprobación:Q", title="Alumnos únicos"),
-                alt.Tooltip("Materias reprobadas:Q", title="Materias reprobadas"),
-                alt.Tooltip("Reprobaciones por alumno:Q", title="Rep. por alumno", format=".2f"),
+                alt.Tooltip("Total de materias reprobadas:Q", title="Total materias reprobadas"),
+                alt.Tooltip("Materias reprobadas por alumno:Q", title="Materias por alumno", format=".2f"),
                 alt.Tooltip("Promedio reprobatorio:Q", title="Promedio", format=".2f"),
             ],
         )
@@ -435,23 +466,18 @@ def grafica_carreras(resumen: pd.DataFrame):
 
 
 def grafica_top_materias(tabla: pd.DataFrame):
-    if tabla.empty:
-        return alt.Chart(pd.DataFrame({"x": [], "y": []})).mark_bar()
-
     base = tabla.copy()
-    base["Materia - Docente"] = base["Materia"] + " | " + base["Docente"]
 
     chart = (
         alt.Chart(base)
         .mark_bar()
         .encode(
-            y=alt.Y("Materia - Docente:N", sort="-x", title=None),
-            x=alt.X("Alumnos únicos:Q", title="Alumnos únicos afectados"),
+            y=alt.Y("Materia:N", sort="-x", title=None),
+            x=alt.X("Alumnos únicos con reprobación:Q", title="Alumnos únicos con reprobación"),
             tooltip=[
                 alt.Tooltip("Materia:N", title="Materia"),
-                alt.Tooltip("Docente:N", title="Docente"),
-                alt.Tooltip("Alumnos únicos:Q", title="Alumnos únicos"),
-                alt.Tooltip("Materias reprobadas (Casos):Q", title="Casos totales"),
+                alt.Tooltip("Alumnos únicos con reprobación:Q", title="Alumnos únicos"),
+                alt.Tooltip("Total de materias reprobadas:Q", title="Total materias reprobadas"),
                 alt.Tooltip("Promedio reprobatorio:Q", title="Promedio", format=".2f"),
             ],
         )
@@ -462,9 +488,9 @@ def grafica_top_materias(tabla: pd.DataFrame):
         alt.Chart(base)
         .mark_text(align="left", dx=5)
         .encode(
-            y=alt.Y("Materia - Docente:N", sort="-x"),
-            x=alt.X("Alumnos únicos:Q"),
-            text=alt.Text("Alumnos únicos:Q"),
+            y=alt.Y("Materia:N", sort="-x"),
+            x=alt.X("Alumnos únicos con reprobación:Q"),
+            text=alt.Text("Alumnos únicos con reprobación:Q"),
         )
     )
 
@@ -472,41 +498,52 @@ def grafica_top_materias(tabla: pd.DataFrame):
 
 
 def grafica_historico(hist: pd.DataFrame, titulo: str):
-    if hist.empty:
-        return alt.Chart(pd.DataFrame({"x": [], "y": []})).mark_line()
-
-    base = hist.copy()
-
     line = (
-        alt.Chart(base)
+        alt.Chart(hist)
         .mark_line(point=True)
         .encode(
             x=alt.X("Ciclo:N", title="Ciclo", sort=None, axis=alt.Axis(labelAngle=0)),
-            y=alt.Y("Alumnos únicos:Q", title="Alumnos únicos con reprobación"),
+            y=alt.Y("Alumnos únicos con reprobación:Q", title="Alumnos únicos con reprobación"),
             tooltip=[
                 alt.Tooltip("Ciclo:N", title="Ciclo"),
-                alt.Tooltip("Alumnos únicos:Q", title="Alumnos únicos"),
-                alt.Tooltip("Materias reprobadas (Casos):Q", title="Casos"),
+                alt.Tooltip("Alumnos únicos con reprobación:Q", title="Alumnos únicos"),
+                alt.Tooltip("Total de materias reprobadas:Q", title="Total materias reprobadas"),
             ],
         )
         .properties(height=360, title=titulo)
     )
 
     labels = (
-        alt.Chart(base)
+        alt.Chart(hist)
         .mark_text(dy=-10)
         .encode(
             x=alt.X("Ciclo:N", sort=None),
-            y=alt.Y("Alumnos únicos:Q"),
-            text=alt.Text("Alumnos únicos:Q"),
+            y=alt.Y("Alumnos únicos con reprobación:Q"),
+            text=alt.Text("Alumnos únicos con reprobación:Q"),
         )
     )
 
     return line + labels
 
 
+def grafica_distribucion(dist: pd.DataFrame):
+    return (
+        alt.Chart(dist)
+        .mark_bar()
+        .encode(
+            x=alt.X("Rango:N", title="Rango de calificación"),
+            y=alt.Y("Total de materias reprobadas:Q", title="Total"),
+            tooltip=[
+                alt.Tooltip("Rango:N", title="Rango"),
+                alt.Tooltip("Total de materias reprobadas:Q", title="Total"),
+                alt.Tooltip("Porcentaje:Q", title="Porcentaje", format=".1f"),
+            ],
+        )
+        .properties(height=320)
+    )
+
+
 def grafica_pie_bajas(top: pd.DataFrame):
-    # Mejora: Gráfica de anillo (donut chart) para una mejor legibilidad de porcentajes y motivos.
     if top is None or top.empty:
         return None
 
@@ -525,16 +562,16 @@ def grafica_pie_bajas(top: pd.DataFrame):
 
     chart = (
         alt.Chart(df)
-        .mark_arc(innerRadius=50) # El innerRadius la convierte en anillo visualmente más moderno
+        .mark_arc(innerRadius=50)
         .encode(
             theta=alt.Theta(f"{col_valor}:Q"),
             color=alt.Color(f"{col_categoria}:N", title="Motivo de baja"),
             tooltip=[
-                alt.Tooltip(f"{col_categoria}:N", title="Tipo de Baja"),
-                alt.Tooltip(f"{col_valor}:Q", title="Total de casos"),
+                alt.Tooltip(f"{col_categoria}:N", title="Motivo"),
+                alt.Tooltip(f"{col_valor}:Q", title="Casos"),
             ],
         )
-        .properties(height=330, title="Distribución Porcentual de Bajas")
+        .properties(height=330, title="Distribución de bajas")
     )
 
     return chart
@@ -550,8 +587,14 @@ def mostrar_contexto_bajas(ciclo_sel, area_ctx):
     if not _user_can_see_bajas():
         return
 
-    with st.expander("Contexto adicional: Análisis de Bajas y Retención", expanded=False):
+    with st.expander("Contexto adicional: bajas y retención", expanded=False):
         ciclo_int = _ciclo_to_int(ciclo_sel)
+
+        st.caption(
+            f"Este bloque corresponde a: "
+            f"{area_ctx if area_ctx else 'todas las carreras'} | "
+            f"{ciclo_sel if ciclo_sel != '(Todos)' else 'todos los ciclos'}"
+        )
 
         try:
             res = bajas_retencion.resumen_bajas_por_filtros(
@@ -559,7 +602,7 @@ def mostrar_contexto_bajas(ciclo_sel, area_ctx):
                 area=area_ctx,
             )
 
-            st.metric("Total de Bajas", f"{res.get('n', 0):,}")
+            st.metric("Total de bajas", f"{res.get('n', 0):,}")
 
             top = res.get("top_motivos")
 
@@ -574,7 +617,7 @@ def mostrar_contexto_bajas(ciclo_sel, area_ctx):
                     if chart is not None:
                         st.altair_chart(chart, use_container_width=True)
                     else:
-                        st.caption("No fue posible construir la gráfica circular con la estructura actual.")
+                        st.caption("No fue posible construir la gráfica con la estructura actual.")
             else:
                 st.caption("Sin detalle de motivos para este filtro.")
 
@@ -589,8 +632,8 @@ def mostrar_contexto_bajas(ciclo_sel, area_ctx):
 def render_indice_reprobacion(vista: str | None = None, carrera: str | None = None):
     aplicar_estilos()
 
-    st.title("Índice de Reprobación Institucional")
-    st.caption("Análisis estratégico de alumnos en riesgo, materias críticas y desempeño general.")
+    st.title("Índice de reprobación")
+    st.caption("Identificación de alumnos afectados, materias críticas y comparación por carrera.")
 
     if not vista:
         vista = "Dirección General"
@@ -604,27 +647,27 @@ def render_indice_reprobacion(vista: str | None = None, carrera: str | None = No
         return
 
     try:
-        with st.spinner("Sincronizando datos operativos..."):
+        with st.spinner("Cargando datos de reprobación..."):
             df_raw = _load_reprobacion_from_gsheets(url, sheet_name)
     except Exception as e:
-        st.error("No se pudo conectar con la base de datos documental (Google Sheet).")
+        st.error("No se pudo cargar el Google Sheet de reprobación.")
         st.exception(e)
         return
 
     if df_raw.empty:
-        st.warning("La base de datos de reprobación no contiene registros.")
+        st.warning("La hoja de reprobación está vacía.")
         return
 
     df = preparar_reprobacion(df_raw, umbral)
 
     for req in ["AREA", "CICLO", "MATERIA", "MATRICULA"]:
         if req not in df.columns:
-            st.error(f"Error de estructura documental. Falta la columna: {req}")
-            st.caption(f"Columnas detectadas en la auditoría: {', '.join(df.columns)}")
+            st.error(f"Falta columna requerida: {req}")
+            st.caption(f"Columnas detectadas: {', '.join(df.columns)}")
             return
 
     if df.empty:
-        st.warning("No hay registros de reprobación (calificaciones < 70) en la base de datos.")
+        st.warning("No hay registros de reprobación con calificaciones menores a 70.")
         return
 
     # =====================================================
@@ -637,10 +680,10 @@ def render_indice_reprobacion(vista: str | None = None, carrera: str | None = No
         carrera_norm = normalizar_texto(carrera)
         f = f[f["AREA_norm"] == carrera_norm]
 
-        st.text_input("Programa Académico", value=carrera, disabled=True)
+        st.text_input("Programa académico", value=carrera, disabled=True)
 
         ciclos = ["(Todos)"] + sorted(f["CICLO"].dropna().unique().tolist())
-        ciclo_sel = st.selectbox("Ciclo Escolar", ciclos, key="ir_ciclo_director")
+        ciclo_sel = st.selectbox("Ciclo", ciclos, key="ir_ciclo_director")
 
         if ciclo_sel != "(Todos)":
             f = f[f["CICLO"] == ciclo_sel]
@@ -653,14 +696,14 @@ def render_indice_reprobacion(vista: str | None = None, carrera: str | None = No
 
         with c1:
             area_sel = st.selectbox(
-                "Programa Académico (Carrera)",
+                "Programa académico",
                 ["(Todas)"] + sorted(f["AREA"].dropna().unique().tolist()),
                 key="ir_area_dg",
             )
 
         with c2:
             ciclo_sel = st.selectbox(
-                "Ciclo Escolar",
+                "Ciclo",
                 ["(Todos)"] + sorted(f["CICLO"].dropna().unique().tolist()),
                 key="ir_ciclo_dg",
             )
@@ -670,44 +713,43 @@ def render_indice_reprobacion(vista: str | None = None, carrera: str | None = No
             area_ctx = area_sel
             carrera_txt = area_sel
         else:
-            carrera_txt = "Todos los Programas Académicos"
+            carrera_txt = "Todas las carreras"
 
         if ciclo_sel != "(Todos)":
             f = f[f["CICLO"] == ciclo_sel]
 
-    ciclo_txt = ciclo_sel if ciclo_sel != "(Todos)" else "Todos los Ciclos Históricos"
+    ciclo_txt = ciclo_sel if ciclo_sel != "(Todos)" else "Todos los ciclos"
     contexto_box(carrera_txt, ciclo_txt)
 
     if f.empty:
-        st.warning("No hay registros con los parámetros seleccionados.")
+        st.warning("No hay registros con los filtros seleccionados.")
         return
 
     # =====================================================
-    # NAVEGACIÓN INTERNA
+    # MENÚ
     # =====================================================
-    st.sidebar.markdown("### Menú Operativo")
+    st.sidebar.markdown("### Índice de reprobación")
 
     opciones = [
-        "Resumen Directivo",
-        "Comparativo Institucional",
-        "🚩 Focos Rojos: Materias",
-        "Desempeño Docente",
-        "Auditoría General (Detalle)",
+        "Resumen ejecutivo",
+        "Comparativo por carrera",
+        "Materias críticas",
+        "Detalle de alumnos",
     ]
 
     vista_modulo = st.sidebar.radio(
-        "Seleccione una vista:",
+        "Vista del módulo",
         opciones,
         key="nav_indice_reprobacion",
     )
 
     # =====================================================
-    # KPIs GENERALES Y ACLARACIONES
+    # KPIs
     # =====================================================
     kpis = calcular_kpis(f)
     mostrar_kpis(kpis)
     nota_promedio()
-    explicar_indices(kpis) # Nueva explicación de carga por alumno
+    bloque_lectura_simple(kpis)
 
     mostrar_contexto_bajas(ciclo_sel, area_ctx)
 
@@ -716,184 +758,134 @@ def render_indice_reprobacion(vista: str | None = None, carrera: str | None = No
     # =====================================================
     # RESUMEN EJECUTIVO
     # =====================================================
-    if vista_modulo == "Resumen Directivo":
-        st.subheader("Dashboard Directivo")
+    if vista_modulo == "Resumen ejecutivo":
+        st.subheader("Resumen ejecutivo")
+
+        st.markdown("### 1. Materias que requieren atención prioritaria")
+        tm = top_materias(f, 10)
+
+        if tm.empty:
+            st.info("No hay materias suficientes para mostrar.")
+        else:
+            st.altair_chart(grafica_top_materias(tm), use_container_width=True)
+            st.dataframe(tm, use_container_width=True, hide_index=True)
+
+        st.divider()
 
         col1, col2 = st.columns([1, 1])
 
         with col1:
-            st.markdown("### Tendencia de Reprobación por Ciclo")
+            st.markdown("### 2. Tendencia por ciclo")
             hist = historico_por_ciclo(f)
-            titulo = f"Alumnos afectados — {carrera_txt}"
-            st.altair_chart(grafica_historico(hist, titulo), use_container_width=True)
+            st.altair_chart(
+                grafica_historico(hist, f"Alumnos con reprobación — {carrera_txt}"),
+                use_container_width=True,
+            )
             st.dataframe(hist, use_container_width=True, hide_index=True)
 
         with col2:
-            st.markdown("### Top 10 Materias de Mayor Riesgo")
-            tm = top_materias(f, 10)
-            st.altair_chart(grafica_top_materias(tm), use_container_width=True)
-
-        st.markdown("### Tabla Estratégica de Materias Críticas")
-        st.dataframe(
-            top_materias(f, 10),
-            use_container_width=True,
-            hide_index=True,
-        )
+            st.markdown("### 3. Distribución de calificaciones reprobatorias")
+            dist = distribucion_calificaciones(f)
+            if dist.empty:
+                st.info("No hay calificaciones numéricas para construir la distribución.")
+            else:
+                st.altair_chart(grafica_distribucion(dist), use_container_width=True)
+                st.dataframe(dist, use_container_width=True, hide_index=True)
 
     # =====================================================
     # COMPARATIVO POR CARRERA
     # =====================================================
-    elif vista_modulo == "Comparativo Institucional":
-        st.subheader("Métricas Comparativas por Programa Académico")
+    elif vista_modulo == "Comparativo por carrera":
+        st.subheader("Comparativo por carrera")
 
         resumen = resumen_por_carrera(f)
 
         if len(resumen) < 2:
-            st.info("Actualmente estás viendo los datos de un solo programa. Para el comparativo institucional, selecciona '(Todas)' en los filtros de arriba.")
+            st.info("Con el filtro actual solo hay una carrera. Para comparar, selecciona '(Todas)' en Programa académico.")
         else:
-            st.markdown("### Volumen de Alumnos en Riesgo por Programa")
+            st.markdown("### Carreras con más alumnos afectados")
             st.altair_chart(grafica_carreras(resumen), use_container_width=True)
 
-        st.markdown("### Tabla de Desempeño por Carrera")
+        st.markdown("### Tabla comparativa")
         st.dataframe(
             resumen,
             use_container_width=True,
             hide_index=True,
             column_config={
                 "Promedio reprobatorio": st.column_config.NumberColumn(
-                    "Promedio (Solo Reprobados)", format="%.2f"
+                    "Promedio reprobatorio", format="%.2f"
                 ),
-                "Reprobaciones por alumno": st.column_config.NumberColumn(
-                    "Carga (Reprobaciones/Alumno)", format="%.2f"
+                "Materias reprobadas por alumno": st.column_config.NumberColumn(
+                    "Materias reprobadas por alumno", format="%.2f"
                 ),
             },
         )
 
-    # =====================================================
-    # TOP MATERIAS CRÍTICAS
-    # =====================================================
-    elif vista_modulo == "🚩 Focos Rojos: Materias":
-        st.subheader("Identificación de Asignaturas Críticas (Regularización)")
+        st.caption(
+            "Alumnos únicos evita duplicar personas. Total de materias reprobadas cuenta cada materia reprobada por cada alumno."
+        )
 
-        n_top = st.slider("Cantidad de materias a evaluar", 5, 30, 10)
+    # =====================================================
+    # MATERIAS CRÍTICAS
+    # =====================================================
+    elif vista_modulo == "Materias críticas":
+        st.subheader("Materias críticas")
+
+        n_top = st.slider("Número de materias a mostrar", 5, 30, 10)
 
         tabla = top_materias(f, n_top)
 
         if tabla.empty:
-            st.warning("No se encontraron registros de materias críticas.")
+            st.warning("No se encontraron materias críticas.")
             return
 
-        st.markdown("### Visualización de Riesgo por Materia")
+        st.markdown("### Materias con más alumnos afectados")
         st.altair_chart(grafica_top_materias(tabla), use_container_width=True)
 
-        st.markdown("### Tabla Operativa para Programación de Asesorías")
+        st.markdown("### Tabla para planeación de regularización")
         st.dataframe(
             tabla,
             use_container_width=True,
             hide_index=True,
             column_config={
                 "Promedio reprobatorio": st.column_config.NumberColumn(
-                    "Promedio (Solo Reprobados)", format="%.2f"
+                    "Promedio reprobatorio", format="%.2f"
                 ),
             },
         )
 
-        st.caption(
-            "📌 **Recomendación Operativa:** Utiliza esta tabla para planificar cursos intersemestrales "
-            "o asignar tutorías grupales focalizadas en las materias del Top 5."
+        st.info(
+            "Uso sugerido: tomar las primeras materias del ranking para planear cursos de regularización, asesorías o seguimiento académico."
         )
 
     # =====================================================
-    # DOCENTES ASOCIADOS
+    # DETALLE DE ALUMNOS
     # =====================================================
-    elif vista_modulo == "Desempeño Docente":
-        st.subheader("Índices de Reprobación por Docente")
-
-        if "DOCENTE" not in f.columns or f["DOCENTE"].replace("SIN DOCENTE", pd.NA).dropna().empty:
-            st.warning("No se detectaron registros de docentes en la base documental.")
-            return
-
-        n_top = st.slider("Cantidad de docentes a evaluar", 5, 30, 10)
-
-        tabla = top_docentes(f, n_top)
-
-        if tabla.empty:
-            st.warning("No hay docentes en este filtro.")
-            return
-
-        chart = (
-            alt.Chart(tabla)
-            .mark_bar()
-            .encode(
-                y=alt.Y("Docente:N", sort="-x", title=None),
-                x=alt.X("Alumnos únicos:Q", title="Alumnos únicos afectados"),
-                tooltip=[
-                    alt.Tooltip("Docente:N", title="Docente"),
-                    alt.Tooltip("Alumnos únicos:Q", title="Alumnos únicos"),
-                    alt.Tooltip("Materias reprobadas (Casos):Q", title="Casos"),
-                    alt.Tooltip("Materias distintas impartidas:Q", title="Materias distintas"),
-                    alt.Tooltip("Promedio reprobatorio:Q", title="Promedio", format=".2f"),
-                ],
-            )
-            .properties(height=max(320, min(700, 32 * len(tabla))))
-        )
-
-        labels = (
-            alt.Chart(tabla)
-            .mark_text(align="left", dx=5)
-            .encode(
-                y=alt.Y("Docente:N", sort="-x"),
-                x=alt.X("Alumnos únicos:Q"),
-                text=alt.Text("Alumnos únicos:Q"),
-            )
-        )
-
-        st.altair_chart(chart + labels, use_container_width=True)
-
-        st.dataframe(
-            tabla,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Promedio reprobatorio": st.column_config.NumberColumn(
-                    "Promedio (Solo Reprobados)", format="%.2f"
-                ),
-            },
-        )
-
-        st.caption(
-            "⚠️ **Nota de Auditoría Interna:** Este indicador detecta volumen. Si un docente aparece en los primeros "
-            "lugares, debe cruzarse la información validando el tamaño total de sus grupos para calcular el *porcentaje real* de reprobación."
-        )
-
-    # =====================================================
-    # DETALLE GENERAL
-    # =====================================================
-    elif vista_modulo == "Auditoría General (Detalle)":
-        st.subheader("Base Documental de Reprobaciones")
+    elif vista_modulo == "Detalle de alumnos":
+        st.subheader("Detalle de alumnos con reprobación")
 
         d1, d2, d3 = st.columns(3)
 
         materias = ["(Todas)"] + sorted(f["MATERIA"].dropna().unique().tolist())
-        docentes = ["(Todos)"] + sorted(f["DOCENTE"].dropna().unique().tolist())
         niveles = ["(Todos)"] + sorted(f["NIVEL"].dropna().unique().tolist())
+        ciclos_det = ["(Todos)"] + sorted(f["CICLO"].dropna().unique().tolist())
 
-        materia_f = d1.selectbox("Asignatura", materias, key="ir_f_materia")
-        docente_f = d2.selectbox("Docente", docentes, key="ir_f_docente")
-        nivel_f = d3.selectbox("Nivel Académico", niveles, key="ir_f_nivel")
+        materia_f = d1.selectbox("Materia", materias, key="ir_f_materia")
+        nivel_f = d2.selectbox("Nivel", niveles, key="ir_f_nivel")
+        ciclo_f = d3.selectbox("Ciclo", ciclos_det, key="ir_f_ciclo_det")
 
         df_det = f.copy()
 
         if materia_f != "(Todas)":
             df_det = df_det[df_det["MATERIA"] == materia_f]
 
-        if docente_f != "(Todos)":
-            df_det = df_det[df_det["DOCENTE"] == docente_f]
-
         if nivel_f != "(Todos)":
             df_det = df_det[df_det["NIVEL"] == nivel_f]
 
-        st.caption(f"🔍 Mostrando {len(df_det):,} registros trazables de reprobación")
+        if ciclo_f != "(Todos)":
+            df_det = df_det[df_det["CICLO"] == ciclo_f]
+
+        st.caption(f"Mostrando {len(df_det):,} registros de reprobación")
 
         cols = [
             "CICLO",
@@ -903,7 +895,6 @@ def render_indice_reprobacion(vista: str | None = None, carrera: str | None = No
             "MATRICULA",
             "ALUMNO",
             "MATERIA",
-            "DOCENTE",
             "CALIF_FINAL",
         ]
 
@@ -911,14 +902,13 @@ def render_indice_reprobacion(vista: str | None = None, carrera: str | None = No
 
         tabla = df_det[cols].rename(columns={
             "CICLO": "Ciclo",
-            "ESCUELA": "Campus/Escuela",
+            "ESCUELA": "Escuela",
             "NIVEL": "Nivel",
-            "AREA": "Programa",
+            "AREA": "Carrera",
             "MATRICULA": "Matrícula",
-            "ALUMNO": "Estudiante",
-            "MATERIA": "Asignatura",
-            "DOCENTE": "Docente",
-            "CALIF_FINAL": "Calif. Final",
+            "ALUMNO": "Alumno",
+            "MATERIA": "Materia",
+            "CALIF_FINAL": "Calificación final",
         })
 
         st.dataframe(
@@ -926,8 +916,8 @@ def render_indice_reprobacion(vista: str | None = None, carrera: str | None = No
             use_container_width=True,
             hide_index=True,
             column_config={
-                "Calif. Final": st.column_config.NumberColumn(
-                    "Calif. Final", format="%.2f"
+                "Calificación final": st.column_config.NumberColumn(
+                    "Calificación final", format="%.2f"
                 ),
             },
         )
