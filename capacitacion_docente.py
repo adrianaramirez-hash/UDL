@@ -14,7 +14,6 @@ COLOR_VERDE = "#10B981"
 COLOR_ROJO = "#D7263D"
 COLOR_NARANJA = "#F97316"
 COLOR_GRIS = "#374151"
-COLOR_MORADO = "#6C63FF"
 
 COLOR_MAP_SIMPLE = {
     "Finalizados": COLOR_VERDE,
@@ -91,12 +90,15 @@ ALIAS_ESTATUS = [
     "estatus",
     "estado",
     "estatus_seac",
+    "estado_final",
+    "situacion",
 ]
 
 ALIAS_AVANCE = [
     "avance_pct",
     "avance",
     "porcentaje_avance",
+    "porcentaje",
 ]
 
 
@@ -314,21 +316,23 @@ def limpiar(df):
     )
 
     df["estatus_final"] = df["estatus_final"].astype(str).str.strip().replace("nan", "")
+    df["estatus_norm"] = df["estatus_final"].apply(normalizar_texto)
 
     def inferir_estatus(row):
         est = normalizar_texto(row.get("estatus_final", ""))
+        avance = float(row.get("avance_pct", 0) or 0)
+        tareas_entregadas = float(row.get("tareas_entregadas", 0) or 0)
+        tareas_totales = float(row.get("tareas_totales", 0) or 0)
+
         if est:
             return row.get("estatus_final", "")
 
-        avance = row.get("avance_pct", 0)
-        tareas_totales = row.get("tareas_totales", 0)
-
         if avance >= 100:
             return "FINALIZADO"
-        if avance > 0:
-            return "EN_PROCESO"
-        if tareas_totales > 0:
-            return "EN_PROCESO"
+
+        if tareas_totales > 0 and tareas_entregadas >= tareas_totales:
+            return "FINALIZADO"
+
         return "EN_PROCESO"
 
     df["estatus_final"] = df.apply(inferir_estatus, axis=1)
@@ -338,15 +342,43 @@ def limpiar(df):
 
 
 # =====================================================
-# CLASIFICACIÓN SIMPLE: FINALIZADO VS EN PROCESO
+# CLASIFICACIÓN: FINALIZADO VS EN PROCESO
 # =====================================================
-def es_finalizado(serie):
-    return serie.str.contains("finaliz", case=False, na=False)
+def es_finalizado_df(df):
+    est = df["estatus_norm"].astype(str)
+
+    finalizado_estatus = est.str.contains(
+        "finaliz|terminad|concluid|completad|aprobado|finalizado|finalizados",
+        case=False,
+        na=False,
+    )
+
+    avance_final = pd.to_numeric(df.get("avance_pct", 0), errors="coerce").fillna(0) >= 100
+
+    tareas_entregadas = pd.to_numeric(df.get("tareas_entregadas", 0), errors="coerce").fillna(0)
+    tareas_totales = pd.to_numeric(df.get("tareas_totales", 0), errors="coerce").fillna(0)
+    tareas_final = (tareas_totales > 0) & (tareas_entregadas >= tareas_totales)
+
+    return finalizado_estatus | avance_final | tareas_final
 
 
 def categoria_simple(row):
-    if "finaliz" in normalizar_texto(row.get("estatus_final", "")):
+    est = normalizar_texto(row.get("estatus_final", ""))
+    avance = float(row.get("avance_pct", 0) or 0)
+    tareas_entregadas = float(row.get("tareas_entregadas", 0) or 0)
+    tareas_totales = float(row.get("tareas_totales", 0) or 0)
+
+    if (
+        "finaliz" in est
+        or "terminad" in est
+        or "concluid" in est
+        or "completad" in est
+        or "aprobado" in est
+        or avance >= 100
+        or (tareas_totales > 0 and tareas_entregadas >= tareas_totales)
+    ):
         return "Finalizados"
+
     return "En proceso"
 
 
@@ -358,7 +390,7 @@ def calcular_kpis(df):
     docentes_unicos = df["nombre_normalizado"].nunique()
     cursos_unicos = df["curso"].replace("SIN CURSO", pd.NA).dropna().nunique()
 
-    finalizados = es_finalizado(df["estatus_norm"]).sum()
+    finalizados = es_finalizado_df(df).sum()
     en_proceso = n - finalizados
 
     return {
@@ -378,7 +410,7 @@ def resumen_por_curso(df):
 
     for curso, grp in df.groupby("curso"):
         n = len(grp)
-        finalizados = es_finalizado(grp["estatus_norm"]).sum()
+        finalizados = es_finalizado_df(grp).sum()
         en_proceso = n - finalizados
 
         registros.append({
@@ -405,7 +437,7 @@ def resumen_por_area(df):
 
     for area, grp in df.groupby("area_de_adscripcion"):
         n = len(grp)
-        finalizados = es_finalizado(grp["estatus_norm"]).sum()
+        finalizados = es_finalizado_df(grp).sum()
         en_proceso = n - finalizados
 
         registros.append({
@@ -430,7 +462,11 @@ def tabla_resumen_docentes(df):
         inscripciones=("curso", "count"),
     ).reset_index()
 
-    resumen["finalizados"] = grp.apply(lambda x: es_finalizado(x["estatus_norm"]).sum()).values
+    finalizados_por_docente = []
+    for _, grp_doc in df.groupby("nombre_normalizado"):
+        finalizados_por_docente.append(int(es_finalizado_df(grp_doc).sum()))
+
+    resumen["finalizados"] = finalizados_por_docente
     resumen["en_proceso"] = resumen["inscripciones"] - resumen["finalizados"]
 
     resumen["pct_fin"] = (
@@ -522,7 +558,7 @@ def kpi_card(label, value, caption="", color=COLOR_AZUL):
     )
 
 
-def mostrar_kpis_generales(kpis, tabla_cursos):
+def mostrar_kpis_generales(kpis):
     c1, c2, c3, c4 = st.columns(4)
 
     with c1:
@@ -535,27 +571,36 @@ def mostrar_kpis_generales(kpis, tabla_cursos):
         kpi_card("Cursos activos", kpis["cursos"], "Cursos detectados", COLOR_GRIS)
 
     with c4:
-        if tabla_cursos.empty:
-            kpi_card("% Finalización", f"{kpis['pct_fin']}%", "Global", COLOR_VERDE)
-        else:
-            texto = "<br>".join(
-                [
-                    f"{row['Curso']}: {row['% Finalizados']}%"
-                    for _, row in tabla_cursos.iterrows()
-                ]
-            )
-            st.markdown(
-                f"""
-                <div class="kpi-card" style="border-left-color:{COLOR_VERDE};">
-                    <div class="kpi-title">% FINALIZACIÓN POR CURSO</div>
-                    <div class="kpi-value" style="font-size:1.05rem; color:{COLOR_VERDE}; line-height:1.5;">
-                        {texto}
-                    </div>
-                    <div class="kpi-caption">Cursos concluidos</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+        kpi_card("Cursos finalizados", kpis["finalizados"], "Inscripciones concluidas", COLOR_VERDE)
+
+
+def mostrar_tarjetas_finalizacion_por_curso(tabla_cursos):
+    st.markdown("### % de finalización por curso")
+
+    if tabla_cursos.empty:
+        st.info("No hay cursos detectados para calcular finalización.")
+        return
+
+    cols_por_fila = 3
+    cursos = tabla_cursos.to_dict("records")
+
+    for i in range(0, len(cursos), cols_por_fila):
+        fila = cursos[i:i + cols_por_fila]
+        cols = st.columns(cols_por_fila)
+
+        for idx, row in enumerate(fila):
+            curso = row["Curso"]
+            pct = row["% Finalizados"]
+            finalizados = row["Finalizados"]
+            inscripciones = row["Inscripciones"]
+
+            with cols[idx]:
+                kpi_card(
+                    curso,
+                    f"{pct}%",
+                    f"{finalizados} de {inscripciones} inscripciones finalizadas",
+                    COLOR_VERDE,
+                )
 
 
 # =====================================================
@@ -675,7 +720,7 @@ def render_capacitacion_docente(vista=None, carrera=None):
     tabla_cursos_general = resumen_por_curso(df_permitido)
     kpis = calcular_kpis(df_permitido)
 
-    mostrar_kpis_generales(kpis, tabla_cursos_general)
+    mostrar_kpis_generales(kpis)
     st.divider()
 
     st.sidebar.markdown("### Capacitación Docente")
@@ -695,10 +740,21 @@ def render_capacitacion_docente(vista=None, carrera=None):
     # RESUMEN
     # ==================================================
     if vista_modulo == "Resumen":
+        mostrar_tarjetas_finalizacion_por_curso(tabla_cursos_general)
+        st.divider()
+
         st.subheader("Resumen por curso de capacitación")
 
         st.dataframe(
-            tabla_cursos_general,
+            tabla_cursos_general[[
+                "Curso",
+                "Docentes inscritos",
+                "Inscripciones",
+                "% En proceso",
+                "% Finalizados",
+                "Finalizados",
+                "En proceso",
+            ]],
             use_container_width=True,
             hide_index=True,
             key="tabla_resumen_cursos",
@@ -731,13 +787,6 @@ def render_capacitacion_docente(vista=None, carrera=None):
                 use_container_width=True,
                 key="grafica_finalizacion_curso",
             )
-
-        st.markdown("**Distribución: en proceso vs finalizados por curso**")
-        st.plotly_chart(
-            grafica_proceso_vs_finalizado(df_permitido),
-            use_container_width=True,
-            key="grafica_proceso_vs_finalizado_resumen",
-        )
 
         if vista != "Director de carrera":
             st.markdown("### Ver detalle por carrera / área")
@@ -773,7 +822,8 @@ def render_capacitacion_docente(vista=None, carrera=None):
         st.subheader(f"Seguimiento de capacitación — {area_sel}")
 
         tabla_cursos_area = resumen_por_curso(df_area)
-        mostrar_kpis_generales(calcular_kpis(df_area), tabla_cursos_area)
+        mostrar_kpis_generales(calcular_kpis(df_area))
+        mostrar_tarjetas_finalizacion_por_curso(tabla_cursos_area)
         st.divider()
 
         st.markdown("### Resumen por curso de la carrera")
@@ -841,7 +891,8 @@ def render_capacitacion_docente(vista=None, carrera=None):
         st.markdown(f"### {curso_sel}")
 
         resumen_curso = resumen_por_curso(df_curso)
-        mostrar_kpis_generales(calcular_kpis(df_curso), resumen_curso)
+        mostrar_kpis_generales(calcular_kpis(df_curso),)
+        mostrar_tarjetas_finalizacion_por_curso(resumen_curso)
         st.divider()
 
         col1, col2 = st.columns([1, 2])
