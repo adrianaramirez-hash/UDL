@@ -378,11 +378,9 @@ def filtrar_por_carrera_si_aplica(df, vista, carrera):
 
     carrera_norm = normalizar_texto(carrera)
 
-    df_filtrado = df[
+    return df[
         df["area_de_adscripcion"].apply(normalizar_texto) == carrera_norm
     ]
-
-    return df_filtrado
 
 
 # =====================================================
@@ -397,13 +395,10 @@ def render_capacitacion_docente(vista=None, carrera=None):
 
     df = limpiar(df_raw)
 
-    # Si el usuario es DC, se limita la base a su carrera
     df_permitido = filtrar_por_carrera_si_aplica(df, vista, carrera)
 
     if df_permitido.empty:
-        st.warning(
-            "No hay registros de capacitación para la carrera/servicio asignado."
-        )
+        st.warning("No hay registros de capacitación para la carrera/servicio asignado.")
         st.caption(f"Vista: {vista} | Carrera/servicio: {carrera}")
         return
 
@@ -431,14 +426,26 @@ def render_capacitacion_docente(vista=None, carrera=None):
 
         with col_pie:
             st.markdown("**Inscripciones por estatus**")
-            st.plotly_chart(grafica_estatus(df_permitido), use_container_width=True)
+            st.plotly_chart(
+                grafica_estatus(df_permitido),
+                use_container_width=True,
+                key="grafica_estatus_general",
+            )
 
         with col_area:
             st.markdown("**Inscripciones por área**")
-            st.plotly_chart(grafica_barras_area(df_permitido), use_container_width=True)
+            st.plotly_chart(
+                grafica_barras_area(df_permitido),
+                use_container_width=True,
+                key="grafica_area_general",
+            )
 
         st.markdown("**Inscripciones por curso**")
-        st.plotly_chart(grafica_barras_curso(df_permitido), use_container_width=True)
+        st.plotly_chart(
+            grafica_barras_curso(df_permitido),
+            use_container_width=True,
+            key="grafica_curso_general",
+        )
 
     # ==================================================
     # TAB 2 — DIRECTOR DE CARRERA
@@ -450,7 +457,7 @@ def render_capacitacion_docente(vista=None, carrera=None):
             df_area = df_permitido.copy()
         else:
             areas = sorted(df_permitido["area_de_adscripcion"].dropna().unique())
-            area_sel = st.selectbox("Selecciona área / carrera", areas, key="sel_area")
+            area_sel = st.selectbox("Selecciona área / carrera", areas, key="sel_area_dc")
             df_area = df_permitido[df_permitido["area_de_adscripcion"] == area_sel]
 
         if df_area.empty:
@@ -464,7 +471,11 @@ def render_capacitacion_docente(vista=None, carrera=None):
 
             with col_g1:
                 st.markdown("**Estatus del área**")
-                st.plotly_chart(grafica_estatus(df_area), use_container_width=True)
+                st.plotly_chart(
+                    grafica_estatus(df_area),
+                    use_container_width=True,
+                    key="grafica_estatus_area",
+                )
 
             with col_g2:
                 st.markdown("**Avance % por docente**")
@@ -496,7 +507,11 @@ def render_capacitacion_docente(vista=None, carrera=None):
                     height=max(250, len(avg_avance) * 28),
                 )
 
-                st.plotly_chart(fig_av, use_container_width=True)
+                st.plotly_chart(
+                    fig_av,
+                    use_container_width=True,
+                    key="grafica_avance_docente_area",
+                )
 
             st.subheader(f"Docentes — {area_sel}")
             tabla = tabla_resumen_docentes(df_area).drop(columns=["Área"], errors="ignore")
@@ -505,6 +520,7 @@ def render_capacitacion_docente(vista=None, carrera=None):
                 tabla,
                 use_container_width=True,
                 hide_index=True,
+                key="tabla_docentes_area",
                 column_config={
                     "% Fin.": st.column_config.ProgressColumn(
                         "% Fin.",
@@ -520,7 +536,7 @@ def render_capacitacion_docente(vista=None, carrera=None):
     # ==================================================
     with tab3:
         cursos = sorted(df_permitido["curso"].dropna().unique())
-        curso_sel = st.selectbox("Selecciona curso", cursos, key="sel_curso")
+        curso_sel = st.selectbox("Selecciona curso", cursos, key="sel_curso_capacitacion")
 
         df_curso = df_permitido[df_permitido["curso"] == curso_sel]
 
@@ -542,7 +558,11 @@ def render_capacitacion_docente(vista=None, carrera=None):
 
             with col_p:
                 st.markdown("**Distribución por estatus**")
-                st.plotly_chart(grafica_estatus(df_curso), use_container_width=True)
+                st.plotly_chart(
+                    grafica_estatus(df_curso),
+                    use_container_width=True,
+                    key="grafica_estatus_curso",
+                )
 
             with col_t:
                 st.markdown("**Docentes inscritos**")
@@ -567,6 +587,7 @@ def render_capacitacion_docente(vista=None, carrera=None):
                     tabla_c,
                     use_container_width=True,
                     hide_index=True,
+                    key="tabla_docentes_curso",
                     column_config={
                         "Avance %": st.column_config.ProgressColumn(
                             "Avance %",
@@ -611,7 +632,11 @@ def render_capacitacion_docente(vista=None, carrera=None):
                 height=300,
             )
 
-            st.plotly_chart(fig_r1, use_container_width=True)
+            st.plotly_chart(
+                fig_r1,
+                use_container_width=True,
+                key="grafica_ranking_areas_docentes",
+            )
 
         with r_col2:
             st.markdown("**Áreas con mayor % de finalización**")
@@ -646,7 +671,11 @@ def render_capacitacion_docente(vista=None, carrera=None):
                 height=300,
             )
 
-            st.plotly_chart(fig_r2, use_container_width=True)
+            st.plotly_chart(
+                fig_r2,
+                use_container_width=True,
+                key="grafica_ranking_areas_finalizacion",
+            )
 
         r_col3, r_col4 = st.columns(2)
 
@@ -678,7 +707,11 @@ def render_capacitacion_docente(vista=None, carrera=None):
                 height=320,
             )
 
-            st.plotly_chart(fig_r3, use_container_width=True)
+            st.plotly_chart(
+                fig_r3,
+                use_container_width=True,
+                key="grafica_ranking_cursos_demanda",
+            )
 
         with r_col4:
             st.markdown("**Cursos con mayor abandono / sin avance**")
@@ -717,7 +750,11 @@ def render_capacitacion_docente(vista=None, carrera=None):
                 height=320,
             )
 
-            st.plotly_chart(fig_r4, use_container_width=True)
+            st.plotly_chart(
+                fig_r4,
+                use_container_width=True,
+                key="grafica_ranking_cursos_abandono",
+            )
 
         st.divider()
 
@@ -737,6 +774,7 @@ def render_capacitacion_docente(vista=None, carrera=None):
                 rank_doc_ins,
                 use_container_width=True,
                 hide_index=True,
+                key="tabla_ranking_docentes_inscritos",
             )
 
         with r_col6:
@@ -754,6 +792,7 @@ def render_capacitacion_docente(vista=None, carrera=None):
                 rank_doc_fin,
                 use_container_width=True,
                 hide_index=True,
+                key="tabla_ranking_docentes_finalizados",
             )
 
     # ==================================================
@@ -774,9 +813,9 @@ def render_capacitacion_docente(vista=None, carrera=None):
             df_permitido["estatus_final"].dropna().unique().tolist()
         )
 
-        area_f = f1.selectbox("Filtrar por área", areas_todas, key="f_area")
-        curso_f = f2.selectbox("Filtrar por curso", cursos_todos, key="f_curso")
-        estat_f = f3.selectbox("Filtrar por estatus", estatus_todos, key="f_estat")
+        area_f = f1.selectbox("Filtrar por área", areas_todas, key="f_area_detalle")
+        curso_f = f2.selectbox("Filtrar por curso", cursos_todos, key="f_curso_detalle")
+        estat_f = f3.selectbox("Filtrar por estatus", estatus_todos, key="f_estatus_detalle")
 
         df_det = df_permitido.copy()
 
@@ -826,6 +865,7 @@ def render_capacitacion_docente(vista=None, carrera=None):
             tabla_det,
             use_container_width=True,
             hide_index=True,
+            key="tabla_detalle_capacitacion",
             column_config={
                 "Avance %": st.column_config.ProgressColumn(
                     "Avance %",
