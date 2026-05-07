@@ -380,6 +380,14 @@ def limpiar_diplomas(df):
         if col not in df.columns:
             df[col] = default
 
+    df["estatus_final_diploma"] = df["estatus_final"].astype(str).str.strip()
+    df["estatus_norm_diploma"] = df["estatus_final_diploma"].apply(normalizar_texto)
+
+    est = df["estatus_norm_diploma"]
+
+    # CONTROL_DIPLOMAS solo cuenta como finalizado cuando estatus_final indique FINALIZADO
+    df = df[est.str.contains("finaliz", case=False, na=False)].copy()
+
     df["matricula_key"] = df["matricula"].apply(limpiar_id)
     df["correo_key"] = df["correo"].apply(limpiar_correo)
     df["nombre_key"] = df["nombre"].apply(normalizar_texto)
@@ -387,38 +395,16 @@ def limpiar_diplomas(df):
     df["curso_base"] = df["nombre_curso"].astype(str).str.strip()
 
     mask_sin_nombre_curso = df["curso_base"].isin(["", "nan", "None"])
-    df.loc[mask_sin_nombre_curso, "curso_base"] = df.loc[mask_sin_nombre_curso, "curso_origen"].astype(str).str.strip()
+    df.loc[mask_sin_nombre_curso, "curso_base"] = df.loc[
+        mask_sin_nombre_curso, "curso_origen"
+    ].astype(str).str.strip()
 
     mask_sin_curso_origen = df["curso_base"].isin(["", "nan", "None"])
-    df.loc[mask_sin_curso_origen, "curso_base"] = df.loc[mask_sin_curso_origen, "id_curso"].astype(str).str.strip()
+    df.loc[mask_sin_curso_origen, "curso_base"] = df.loc[
+        mask_sin_curso_origen, "id_curso"
+    ].astype(str).str.strip()
 
     df["curso_key"] = df["curso_base"].apply(normalizar_texto)
-    df["estatus_final_diploma"] = df["estatus_final"].astype(str).str.strip()
-    df["estatus_norm_diploma"] = df["estatus_final_diploma"].apply(normalizar_texto)
-
-    # CONTROL_DIPLOMAS es la fuente oficial de finalización.
-    # Aun así, filtramos solo casos donde el estatus no indique error/pendiente/no.
-    est = df["estatus_norm_diploma"]
-
-    es_negativo = est.str.contains(
-        "pendiente|error|rechaz|no_aplica|no_enviar|no_enviado|no_encontrado",
-        case=False,
-        na=False,
-    )
-
-    es_final = est.str.contains(
-        "finaliz|terminad|concluid|completad|aprobado|apto|enviado|si|ok",
-        case=False,
-        na=False,
-    )
-
-    # Si estatus_final está vacío pero existe en CONTROL_DIPLOMAS con matrícula/curso,
-    # también lo consideramos finalizado porque esta hoja es la fuente oficial.
-    estatus_vacio = est.eq("") | est.eq("nan") | est.eq("none")
-
-    df["es_finalizado_diploma"] = (es_final | estatus_vacio) & (~es_negativo)
-
-    df = df[df["es_finalizado_diploma"]].copy()
 
     return df[[
         "matricula_key",
@@ -441,40 +427,48 @@ def aplicar_finalizados_por_diplomas(seguimiento, diplomas):
         df["estatus_final"] = "EN_PROCESO"
         return df
 
-    set_mat_curso = set(
-        zip(
-            dip["matricula_key"].astype(str),
-            dip["curso_key"].astype(str),
-        )
+    # CONTROL_DIPLOMAS MANDA:
+    # Si el docente aparece ahí con estatus_final = FINALIZADO,
+    # cuenta como finalizado aunque no coincida exactamente el nombre del curso.
+    set_matriculas = set(
+        dip["matricula_key"]
+        .astype(str)
+        .str.strip()
+        .replace("", pd.NA)
+        .dropna()
+        .tolist()
     )
 
-    set_correo_curso = set(
-        zip(
-            dip["correo_key"].astype(str),
-            dip["curso_key"].astype(str),
-        )
+    set_correos = set(
+        dip["correo_key"]
+        .astype(str)
+        .str.strip()
+        .replace("", pd.NA)
+        .dropna()
+        .tolist()
     )
 
-    set_nombre_curso = set(
-        zip(
-            dip["nombre_key"].astype(str),
-            dip["curso_key"].astype(str),
-        )
+    set_nombres = set(
+        dip["nombre_key"]
+        .astype(str)
+        .str.strip()
+        .replace("", pd.NA)
+        .dropna()
+        .tolist()
     )
 
     def esta_finalizado(row):
-        matricula_key = str(row.get("matricula_key", ""))
-        correo_key = str(row.get("correo_key", ""))
-        nombre_key = str(row.get("nombre_key", ""))
-        curso_key = str(row.get("curso_key", ""))
+        matricula_key = str(row.get("matricula_key", "")).strip()
+        correo_key = str(row.get("correo_key", "")).strip()
+        nombre_key = str(row.get("nombre_key", "")).strip()
 
-        if matricula_key and curso_key and (matricula_key, curso_key) in set_mat_curso:
+        if matricula_key and matricula_key in set_matriculas:
             return True
 
-        if correo_key and curso_key and (correo_key, curso_key) in set_correo_curso:
+        if correo_key and correo_key in set_correos:
             return True
 
-        if nombre_key and curso_key and (nombre_key, curso_key) in set_nombre_curso:
+        if nombre_key and nombre_key in set_nombres:
             return True
 
         return False
