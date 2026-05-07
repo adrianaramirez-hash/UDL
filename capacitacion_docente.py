@@ -7,10 +7,17 @@ import re
 # =====================================================
 # CONFIG
 # =====================================================
-SHEET_ID = "1Dgu3_UMAYecX-KCxLhHUe_EYiXCF68rvE2XpYwOx9lM"
+SHEET_ID = "1Cl0QQxh0Ls5EqCwzowVVV2bCscok9kXR0m_HdyoEiRw"
 
-URL_SEGUIMIENTO = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=519739604"
-URL_CONTROL_DIPLOMAS = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=CONTROL_DIPLOMAS"
+URL_SEGUIMIENTO = (
+    f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq"
+    f"?tqx=out:csv&sheet=SEGUIMIENTO_ACTUAL"
+)
+
+URL_CONTROL_DIPLOMAS = (
+    f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq"
+    f"?tqx=out:csv&sheet=CONTROL_DIPLOMAS"
+)
 
 COLOR_AZUL = "#2F80ED"
 COLOR_VERDE = "#10B981"
@@ -22,6 +29,9 @@ COLOR_MAP_SIMPLE = {
 }
 
 
+# =====================================================
+# UTILIDADES
+# =====================================================
 def normalizar_texto(texto):
     if not isinstance(texto, str):
         return ""
@@ -37,7 +47,8 @@ def limpiar_id(texto):
     if pd.isna(texto):
         return ""
     texto = str(texto).strip()
-    texto = texto.replace(".0", "") if texto.endswith(".0") else texto
+    if texto.endswith(".0"):
+        texto = texto.replace(".0", "")
     return texto.lower()
 
 
@@ -47,18 +58,9 @@ def limpiar_correo(texto):
     return str(texto).strip().lower()
 
 
-def normalizar_valor(texto):
-    if pd.isna(texto):
-        return ""
-    return str(texto).strip()
-
-
 def normalizar_columnas(df):
-    columnas_originales = list(df.columns)
-    columnas_norm = [normalizar_texto(c) for c in columnas_originales]
-    mapa_original = dict(zip(columnas_norm, columnas_originales))
-    df.columns = columnas_norm
-    df.attrs["mapa_original"] = mapa_original
+    df = df.copy()
+    df.columns = [normalizar_texto(c) for c in df.columns]
     return df
 
 
@@ -76,11 +78,42 @@ def cargar_datos():
     return seguimiento, diplomas
 
 
-ALIAS_AREA = ["area_de_adscripcion", "area_adscripcion", "adscripcion", "area", "carrera", "departamento"]
-ALIAS_NOMBRE = ["nombre_normalizado", "nombre_forms", "nombre_seac", "nombre", "docente", "nombre_docente", "nombre_completo"]
-ALIAS_CORREO = ["correo_docente", "correo", "correo_electronico", "direccion_de_correo_electronico", "correo_seac"]
-ALIAS_ESTATUS = ["estatus_final", "estatus", "estado", "estatus_seac", "estado_final", "situacion"]
-ALIAS_AVANCE = ["avance_pct", "avance", "porcentaje_avance", "porcentaje"]
+# =====================================================
+# ALIAS
+# =====================================================
+ALIAS_AREA = [
+    "area_de_adscripcion",
+    "area_adscripcion",
+    "adscripcion",
+    "area",
+    "carrera",
+    "departamento",
+]
+
+ALIAS_NOMBRE = [
+    "nombre_normalizado",
+    "nombre_forms",
+    "nombre_seac",
+    "nombre",
+    "docente",
+    "nombre_docente",
+    "nombre_completo",
+]
+
+ALIAS_CORREO = [
+    "correo_docente",
+    "correo",
+    "correo_electronico",
+    "direccion_de_correo_electronico",
+    "correo_seac",
+]
+
+ALIAS_AVANCE = [
+    "avance_pct",
+    "avance",
+    "porcentaje_avance",
+    "porcentaje",
+]
 
 
 def detectar_columna(df, aliases):
@@ -99,120 +132,39 @@ def detectar_columna(df, aliases):
     return None
 
 
-def extraer_curso_desde_columna(nombre_columna_original):
-    texto = str(nombre_columna_original)
-
-    m = re.search(r"\[(.*?)\]", texto)
-    if m:
-        return m.group(1).strip()
-
-    texto = texto.replace("Selecciona el taller al que deseas inscribirte", "")
-    texto = texto.replace("en caso de no no desees inscribirte a algún curso selecciona NO INSCRIBIRME", "")
-    texto = texto.replace("en caso de no desees inscribirte a algún curso selecciona NO INSCRIBIRME", "")
-    texto = texto.replace(",", "")
-    texto = texto.strip()
-
-    return texto if texto else "SIN CURSO"
-
-
-def construir_curso_si_no_existe(df):
-    df = df.copy()
-
-    if "curso" in df.columns and df["curso"].notna().any():
-        df["curso"] = df["curso"].astype(str).str.strip()
-        return df
-
-    mapa_original = df.attrs.get("mapa_original", {})
-
-    posibles_cols_curso = []
-    for col in df.columns:
-        col_norm = normalizar_texto(col)
-        col_original = mapa_original.get(col, col)
-
-        if (
-            "taller" in col_norm
-            or "curso" in col_norm
-            or "capacitacion" in col_norm
-            or "inscribirte" in normalizar_texto(str(col_original))
-        ):
-            posibles_cols_curso.append(col)
-
-    posibles_cols_curso = [
-        c for c in posibles_cols_curso
-        if c not in ["curso", "nombre_curso", "estatus_final", "tipo_correo"]
-    ]
-
-    if not posibles_cols_curso:
-        df["curso"] = "SIN CURSO"
-        return df
-
-    registros = []
-    columnas_base = [c for c in df.columns if c not in posibles_cols_curso]
-
-    for _, row in df.iterrows():
-        for col in posibles_cols_curso:
-            valor = normalizar_valor(row.get(col, ""))
-            valor_norm = normalizar_texto(valor)
-
-            if not valor_norm:
-                continue
-            if "no_inscribirme" in valor_norm or "no_me_inscribo" in valor_norm:
-                continue
-            if valor_norm in ["nan", "sin_dato", "no"]:
-                continue
-
-            nuevo = row[columnas_base].to_dict()
-            col_original = mapa_original.get(col, col)
-            curso_desde_columna = extraer_curso_desde_columna(col_original)
-
-            if "inscrib" in valor_norm or valor_norm in ["si", "sí"]:
-                nuevo["curso"] = curso_desde_columna
-            else:
-                nuevo["curso"] = valor
-
-            registros.append(nuevo)
-
-    if registros:
-        return pd.DataFrame(registros)
-
-    df["curso"] = "SIN CURSO"
-    return df
-
-
+# =====================================================
+# LIMPIEZA SEGUIMIENTO
+# =====================================================
 def limpiar_seguimiento(df):
     df = df.copy()
 
     col_area = detectar_columna(df, ALIAS_AREA)
     col_nombre = detectar_columna(df, ALIAS_NOMBRE)
     col_correo = detectar_columna(df, ALIAS_CORREO)
-    col_estatus = detectar_columna(df, ALIAS_ESTATUS)
     col_avance = detectar_columna(df, ALIAS_AVANCE)
 
     if col_area and col_area != "area_de_adscripcion":
         df = df.rename(columns={col_area: "area_de_adscripcion"})
+
     if col_nombre and col_nombre != "nombre_normalizado":
         df = df.rename(columns={col_nombre: "nombre_normalizado"})
+
     if col_correo and col_correo != "correo_docente":
         df = df.rename(columns={col_correo: "correo_docente"})
-    if col_estatus and col_estatus != "estatus_original":
-        df = df.rename(columns={col_estatus: "estatus_original"})
+
     if col_avance and col_avance != "avance_pct":
         df = df.rename(columns={col_avance: "avance_pct"})
-
-    df = construir_curso_si_no_existe(df)
 
     defaults = {
         "area_de_adscripcion": "SIN ÁREA",
         "curso": "SIN CURSO",
-        "estatus_original": "",
         "nombre_normalizado": "SIN NOMBRE",
         "correo_docente": "",
         "avance_pct": 0,
         "tareas_entregadas": 0,
         "tareas_totales": 0,
         "matricula": "",
-        "requiere_correo": "",
-        "tipo_correo": "",
+        "estatus_final": "EN_PROCESO",
         "fecha_ultimo_corte": "",
         "observaciones": "",
     }
@@ -221,34 +173,53 @@ def limpiar_seguimiento(df):
         if col not in df.columns:
             df[col] = default
 
-    if "tareas" in df.columns:
-        tareas_split = df["tareas"].astype(str).str.extract(r"(\d+)\s*/\s*(\d+)")
-        if tareas_split.notna().any().any():
-            df["tareas_entregadas"] = pd.to_numeric(tareas_split[0], errors="coerce").fillna(df["tareas_entregadas"])
-            df["tareas_totales"] = pd.to_numeric(tareas_split[1], errors="coerce").fillna(df["tareas_totales"])
-
-    df["tareas_entregadas"] = pd.to_numeric(df["tareas_entregadas"], errors="coerce").fillna(0)
-    df["tareas_totales"] = pd.to_numeric(df["tareas_totales"], errors="coerce").fillna(0)
-
-    df["avance_pct"] = pd.to_numeric(df["avance_pct"], errors="coerce").fillna(0)
-
-    if df["avance_pct"].max() <= 1 and df["avance_pct"].max() > 0:
-        df["avance_pct"] = df["avance_pct"] * 100
-
-    mask_avance_cero = (df["avance_pct"] == 0) & (df["tareas_totales"] > 0)
-    df.loc[mask_avance_cero, "avance_pct"] = (
-        df.loc[mask_avance_cero, "tareas_entregadas"] /
-        df.loc[mask_avance_cero, "tareas_totales"] * 100
+    df["area_de_adscripcion"] = (
+        df["area_de_adscripcion"]
+        .astype(str)
+        .str.strip()
+        .str.upper()
+        .replace("NAN", "SIN ÁREA")
+        .replace("", "SIN ÁREA")
     )
 
-    df["avance_pct"] = df["avance_pct"].clip(lower=0, upper=100)
+    df["curso"] = (
+        df["curso"]
+        .astype(str)
+        .str.strip()
+        .replace("nan", "SIN CURSO")
+        .replace("", "SIN CURSO")
+    )
 
-    df["area_de_adscripcion"] = df["area_de_adscripcion"].astype(str).str.strip().str.upper().replace("NAN", "SIN ÁREA").replace("", "SIN ÁREA")
-    df["curso"] = df["curso"].astype(str).str.strip().replace("nan", "SIN CURSO").replace("", "SIN CURSO")
-    df["nombre_normalizado"] = df["nombre_normalizado"].astype(str).str.strip().replace("nan", "SIN NOMBRE").replace("", "SIN NOMBRE")
-    df["correo_docente"] = df["correo_docente"].astype(str).str.strip().replace("nan", "")
+    df["nombre_normalizado"] = (
+        df["nombre_normalizado"]
+        .astype(str)
+        .str.strip()
+        .replace("nan", "SIN NOMBRE")
+        .replace("", "SIN NOMBRE")
+    )
+
+    df["correo_docente"] = (
+        df["correo_docente"]
+        .astype(str)
+        .str.strip()
+        .replace("nan", "")
+    )
 
     df["matricula"] = df["matricula"].apply(limpiar_id)
+
+    df["tareas_entregadas"] = pd.to_numeric(
+        df["tareas_entregadas"], errors="coerce"
+    ).fillna(0)
+
+    df["tareas_totales"] = pd.to_numeric(
+        df["tareas_totales"], errors="coerce"
+    ).fillna(0)
+
+    df["avance_pct"] = pd.to_numeric(
+        df["avance_pct"], errors="coerce"
+    ).fillna(0)
+
+    df["avance_pct"] = df["avance_pct"].clip(lower=0, upper=100)
 
     df["curso_key"] = df["curso"].apply(normalizar_texto)
     df["matricula_key"] = df["matricula"].apply(limpiar_id)
@@ -258,6 +229,9 @@ def limpiar_seguimiento(df):
     return df
 
 
+# =====================================================
+# LIMPIEZA CONTROL_DIPLOMAS
+# =====================================================
 def limpiar_diplomas(df):
     if df.empty:
         return pd.DataFrame(columns=[
@@ -271,6 +245,7 @@ def limpiar_diplomas(df):
     df = df.copy()
 
     defaults = {
+        "curso": "",
         "id_curso": "",
         "nombre_curso": "",
         "curso_origen": "",
@@ -284,23 +259,54 @@ def limpiar_diplomas(df):
         if col not in df.columns:
             df[col] = default
 
-    df["estatus_final_diploma"] = df["estatus_final"].astype(str).str.strip()
-    df["estatus_norm_diploma"] = df["estatus_final_diploma"].apply(normalizar_texto)
+    df["estatus_final_diploma"] = (
+        df["estatus_final"]
+        .astype(str)
+        .str.strip()
+    )
 
-    # Solo cuenta como finalizado si CONTROL_DIPLOMAS dice FINALIZADO
-    df = df[df["estatus_norm_diploma"].str.contains("finaliz", case=False, na=False)].copy()
+    df["estatus_norm_diploma"] = (
+        df["estatus_final_diploma"]
+        .apply(normalizar_texto)
+    )
+
+    # Solo cuenta si CONTROL_DIPLOMAS dice FINALIZADO
+    df = df[
+        df["estatus_norm_diploma"]
+        .str.contains("finaliz", case=False, na=False)
+    ].copy()
 
     df["matricula_key"] = df["matricula"].apply(limpiar_id)
     df["correo_key"] = df["correo"].apply(limpiar_correo)
     df["nombre_key"] = df["nombre"].apply(normalizar_texto)
 
-    df["curso_base"] = df["nombre_curso"].astype(str).str.strip()
+    # En tu archivo actual, el curso correcto está en la columna "curso"
+    df["curso_base"] = (
+        df["curso"]
+        .astype(str)
+        .str.strip()
+    )
 
-    mask_sin_nombre_curso = df["curso_base"].isin(["", "nan", "None"])
-    df.loc[mask_sin_nombre_curso, "curso_base"] = df.loc[mask_sin_nombre_curso, "curso_origen"].astype(str).str.strip()
+    mask = df["curso_base"].isin(["", "nan", "None"])
+    df.loc[mask, "curso_base"] = (
+        df.loc[mask, "nombre_curso"]
+        .astype(str)
+        .str.strip()
+    )
 
-    mask_sin_curso_origen = df["curso_base"].isin(["", "nan", "None"])
-    df.loc[mask_sin_curso_origen, "curso_base"] = df.loc[mask_sin_curso_origen, "id_curso"].astype(str).str.strip()
+    mask = df["curso_base"].isin(["", "nan", "None"])
+    df.loc[mask, "curso_base"] = (
+        df.loc[mask, "curso_origen"]
+        .astype(str)
+        .str.strip()
+    )
+
+    mask = df["curso_base"].isin(["", "nan", "None"])
+    df.loc[mask, "curso_base"] = (
+        df.loc[mask, "id_curso"]
+        .astype(str)
+        .str.strip()
+    )
 
     df["curso_key"] = df["curso_base"].apply(normalizar_texto)
 
@@ -313,6 +319,9 @@ def limpiar_diplomas(df):
     ]].drop_duplicates()
 
 
+# =====================================================
+# CRUCE SEGUIMIENTO + CONTROL_DIPLOMAS
+# =====================================================
 def aplicar_finalizados_por_diplomas(seguimiento, diplomas):
     df = seguimiento.copy()
     dip = diplomas.copy()
@@ -322,19 +331,26 @@ def aplicar_finalizados_por_diplomas(seguimiento, diplomas):
         df["estatus_final"] = "EN_PROCESO"
         return df
 
-    # Aquí está el ajuste importante:
-    # Finalizado = aparece en CONTROL_DIPLOMAS como FINALIZADO
-    # pero debe coincidir docente + curso.
-    set_mat_curso = set(zip(dip["matricula_key"].astype(str), dip["curso_key"].astype(str)))
-    set_correo_curso = set(zip(dip["correo_key"].astype(str), dip["curso_key"].astype(str)))
-    set_nombre_curso = set(zip(dip["nombre_key"].astype(str), dip["curso_key"].astype(str)))
+    set_mat_curso = set(
+        zip(
+            dip["matricula_key"].astype(str),
+            dip["curso_key"].astype(str),
+        )
+    )
 
-    def curso_coincide(curso_seg, curso_dip):
-        if not curso_seg or not curso_dip:
-            return False
-        return curso_seg == curso_dip or curso_seg in curso_dip or curso_dip in curso_seg
+    set_correo_curso = set(
+        zip(
+            dip["correo_key"].astype(str),
+            dip["curso_key"].astype(str),
+        )
+    )
 
-    lista_diplomas = dip[["matricula_key", "correo_key", "nombre_key", "curso_key"]].to_dict("records")
+    set_nombre_curso = set(
+        zip(
+            dip["nombre_key"].astype(str),
+            dip["curso_key"].astype(str),
+        )
+    )
 
     def esta_finalizado(row):
         matricula_key = str(row.get("matricula_key", "")).strip()
@@ -351,19 +367,6 @@ def aplicar_finalizados_por_diplomas(seguimiento, diplomas):
         if nombre_key and curso_key and (nombre_key, curso_key) in set_nombre_curso:
             return True
 
-        # Respaldo flexible cuando el nombre del curso no coincide exactamente
-        for d in lista_diplomas:
-            dip_curso = str(d.get("curso_key", "")).strip()
-
-            mismo_docente = (
-                (matricula_key and matricula_key == str(d.get("matricula_key", "")).strip())
-                or (correo_key and correo_key == str(d.get("correo_key", "")).strip())
-                or (nombre_key and nombre_key == str(d.get("nombre_key", "")).strip())
-            )
-
-            if mismo_docente and curso_coincide(curso_key, dip_curso):
-                return True
-
         return False
 
     df["finalizado_oficial"] = df.apply(esta_finalizado, axis=1)
@@ -376,13 +379,18 @@ def aplicar_finalizados_por_diplomas(seguimiento, diplomas):
     return df
 
 
+# =====================================================
+# FILTROS Y CÁLCULOS
+# =====================================================
 def filtrar_por_carrera_si_aplica(df, vista, carrera):
     if vista != "Director de carrera" or not carrera:
         return df
 
     carrera_norm = normalizar_texto(carrera)
 
-    return df[df["area_de_adscripcion"].apply(normalizar_texto) == carrera_norm]
+    return df[
+        df["area_de_adscripcion"].apply(normalizar_texto) == carrera_norm
+    ]
 
 
 def calcular_kpis(df):
@@ -425,8 +433,13 @@ def resumen_por_curso(df):
 
     if not registros:
         return pd.DataFrame(columns=[
-            "Curso", "Docentes inscritos", "Inscripciones",
-            "% En proceso", "% Finalizados", "Finalizados", "En proceso"
+            "Curso",
+            "Docentes inscritos",
+            "Inscripciones",
+            "% En proceso",
+            "% Finalizados",
+            "Finalizados",
+            "En proceso",
         ])
 
     return pd.DataFrame(registros).sort_values("Inscripciones", ascending=False)
@@ -464,7 +477,9 @@ def tabla_resumen_docentes(df):
     ).reset_index()
 
     resumen["cursos_finalizados"] = resumen["cursos_finalizados"].astype(int)
-    resumen["cursos_en_proceso"] = resumen["inscripciones"] - resumen["cursos_finalizados"]
+    resumen["cursos_en_proceso"] = (
+        resumen["inscripciones"] - resumen["cursos_finalizados"]
+    )
 
     resumen["pct_fin"] = (
         resumen["cursos_finalizados"] / resumen["inscripciones"] * 100
@@ -481,17 +496,30 @@ def tabla_resumen_docentes(df):
         "pct_fin": "% Finalización",
     })
 
-    return resumen.sort_values(["Cursos finalizados", "Cursos inscritos"], ascending=False).reset_index(drop=True)
+    return resumen.sort_values(
+        ["Cursos finalizados", "Cursos inscritos"],
+        ascending=False,
+    ).reset_index(drop=True)
 
 
 def docentes_top_finalizados(df):
     t = tabla_resumen_docentes(df)
     t = t[t["Cursos finalizados"] > 0].copy()
     return t[[
-        "Docente", "Área", "Cursos inscritos", "Cursos finalizados", "% Finalización"
-    ]].sort_values(["Cursos finalizados", "% Finalización"], ascending=False).head(15)
+        "Docente",
+        "Área",
+        "Cursos inscritos",
+        "Cursos finalizados",
+        "% Finalización",
+    ]].sort_values(
+        ["Cursos finalizados", "% Finalización"],
+        ascending=False,
+    ).head(15)
 
 
+# =====================================================
+# ESTILOS
+# =====================================================
 def aplicar_estilos():
     st.markdown(
         """
@@ -545,16 +573,36 @@ def mostrar_kpis_generales(kpis):
     c1, c2, c3, c4 = st.columns(4)
 
     with c1:
-        kpi_card("Docentes inscritos", kpis["docentes"], "Docentes únicos sin duplicar", COLOR_AZUL)
+        kpi_card(
+            "Docentes inscritos",
+            kpis["docentes"],
+            "Docentes únicos sin duplicar",
+            COLOR_AZUL,
+        )
 
     with c2:
-        kpi_card("Inscripciones", kpis["inscripciones"], "Total docente-curso", COLOR_VERDE)
+        kpi_card(
+            "Inscripciones",
+            kpis["inscripciones"],
+            "Total docente-curso",
+            COLOR_VERDE,
+        )
 
     with c3:
-        kpi_card("Cursos activos", kpis["cursos"], "Cursos detectados", COLOR_GRIS)
+        kpi_card(
+            "Cursos activos",
+            kpis["cursos"],
+            "Cursos detectados",
+            COLOR_GRIS,
+        )
 
     with c4:
-        kpi_card("Finalizados", kpis["finalizados"], "Según CONTROL_DIPLOMAS", COLOR_VERDE)
+        kpi_card(
+            "Finalizados",
+            kpis["finalizados"],
+            "Según CONTROL_DIPLOMAS",
+            COLOR_VERDE,
+        )
 
 
 def mostrar_tarjetas_finalizacion_por_curso(tabla_cursos):
@@ -581,6 +629,9 @@ def mostrar_tarjetas_finalizacion_por_curso(tabla_cursos):
                 )
 
 
+# =====================================================
+# GRÁFICAS
+# =====================================================
 def grafica_inscritos_area(df):
     resumen = resumen_por_area(df)
 
@@ -672,6 +723,9 @@ def grafica_proceso_vs_finalizado(df):
     return fig
 
 
+# =====================================================
+# FUNCIÓN PRINCIPAL
+# =====================================================
 def render_capacitacion_docente(vista=None, carrera=None):
     aplicar_estilos()
 
@@ -701,7 +755,13 @@ def render_capacitacion_docente(vista=None, carrera=None):
     st.sidebar.markdown("### Capacitación Docente")
     vista_modulo = st.sidebar.radio(
         "Vista del módulo",
-        ["Resumen", "Director de Carrera", "Por curso", "Rankings", "Detalle general"],
+        [
+            "Resumen",
+            "Director de Carrera",
+            "Por curso",
+            "Rankings",
+            "Detalle general",
+        ],
         key="nav_capacitacion_docente",
     )
 
@@ -713,18 +773,29 @@ def render_capacitacion_docente(vista=None, carrera=None):
 
         st.dataframe(
             tabla_cursos_general[[
-                "Curso", "Docentes inscritos", "Inscripciones",
-                "% En proceso", "% Finalizados", "Finalizados", "En proceso",
+                "Curso",
+                "Docentes inscritos",
+                "Inscripciones",
+                "% En proceso",
+                "% Finalizados",
+                "Finalizados",
+                "En proceso",
             ]],
             use_container_width=True,
             hide_index=True,
             key="tabla_resumen_cursos",
             column_config={
                 "% En proceso": st.column_config.ProgressColumn(
-                    "% En proceso", min_value=0, max_value=100, format="%.1f%%"
+                    "% En proceso",
+                    min_value=0,
+                    max_value=100,
+                    format="%.1f%%",
                 ),
                 "% Finalizados": st.column_config.ProgressColumn(
-                    "% Finalizados", min_value=0, max_value=100, format="%.1f%%"
+                    "% Finalizados",
+                    min_value=0,
+                    max_value=100,
+                    format="%.1f%%",
                 ),
             },
         )
@@ -735,16 +806,28 @@ def render_capacitacion_docente(vista=None, carrera=None):
 
         with col1:
             st.markdown("**Docentes inscritos por área de adscripción**")
-            st.plotly_chart(grafica_inscritos_area(df_permitido), use_container_width=True, key="grafica_inscritos_area")
+            st.plotly_chart(
+                grafica_inscritos_area(df_permitido),
+                use_container_width=True,
+                key="grafica_inscritos_area",
+            )
 
         with col2:
             st.markdown("**% de finalizados por curso**")
-            st.plotly_chart(grafica_finalizacion_curso(df_permitido), use_container_width=True, key="grafica_finalizacion_curso")
+            st.plotly_chart(
+                grafica_finalizacion_curso(df_permitido),
+                use_container_width=True,
+                key="grafica_finalizacion_curso",
+            )
 
         if vista != "Director de carrera":
             st.markdown("### Ver detalle por carrera / área")
             areas = sorted(df_permitido["area_de_adscripcion"].dropna().unique())
-            area_sel = st.selectbox("Selecciona una carrera / área", areas, key="dg_selector_area_resumen")
+            area_sel = st.selectbox(
+                "Selecciona una carrera / área",
+                areas,
+                key="dg_selector_area_resumen",
+            )
             df_area = df_permitido[df_permitido["area_de_adscripcion"] == area_sel]
 
             st.dataframe(
@@ -754,7 +837,10 @@ def render_capacitacion_docente(vista=None, carrera=None):
                 key="tabla_detalle_area_resumen",
                 column_config={
                     "% Finalización": st.column_config.ProgressColumn(
-                        "% Finalización", min_value=0, max_value=100, format="%.1f%%"
+                        "% Finalización",
+                        min_value=0,
+                        max_value=100,
+                        format="%.1f%%",
                     ),
                 },
             )
@@ -766,7 +852,11 @@ def render_capacitacion_docente(vista=None, carrera=None):
             df_area = df_permitido.copy()
         else:
             areas = sorted(df_permitido["area_de_adscripcion"].dropna().unique())
-            area_sel = st.selectbox("Selecciona área / carrera", areas, key="sel_area_dc")
+            area_sel = st.selectbox(
+                "Selecciona área / carrera",
+                areas,
+                key="sel_area_dc",
+            )
             df_area = df_permitido[df_permitido["area_de_adscripcion"] == area_sel]
 
         st.subheader(f"Seguimiento de capacitación — {area_sel}")
@@ -784,10 +874,16 @@ def render_capacitacion_docente(vista=None, carrera=None):
             key="tabla_cursos_area_dc",
             column_config={
                 "% En proceso": st.column_config.ProgressColumn(
-                    "% En proceso", min_value=0, max_value=100, format="%.1f%%"
+                    "% En proceso",
+                    min_value=0,
+                    max_value=100,
+                    format="%.1f%%",
                 ),
                 "% Finalizados": st.column_config.ProgressColumn(
-                    "% Finalizados", min_value=0, max_value=100, format="%.1f%%"
+                    "% Finalizados",
+                    min_value=0,
+                    max_value=100,
+                    format="%.1f%%",
                 ),
             },
         )
@@ -796,11 +892,19 @@ def render_capacitacion_docente(vista=None, carrera=None):
 
         with col1:
             st.markdown("**% finalizados por curso en la carrera**")
-            st.plotly_chart(grafica_finalizacion_curso(df_area), use_container_width=True, key="grafica_finalizacion_curso_dc")
+            st.plotly_chart(
+                grafica_finalizacion_curso(df_area),
+                use_container_width=True,
+                key="grafica_finalizacion_curso_dc",
+            )
 
         with col2:
             st.markdown("**En proceso vs finalizados por curso**")
-            st.plotly_chart(grafica_proceso_vs_finalizado(df_area), use_container_width=True, key="grafica_proceso_vs_finalizado_dc")
+            st.plotly_chart(
+                grafica_proceso_vs_finalizado(df_area),
+                use_container_width=True,
+                key="grafica_proceso_vs_finalizado_dc",
+            )
 
         st.markdown("### Docentes de la carrera")
         st.dataframe(
@@ -810,7 +914,10 @@ def render_capacitacion_docente(vista=None, carrera=None):
             key="tabla_docentes_area",
             column_config={
                 "% Finalización": st.column_config.ProgressColumn(
-                    "% Finalización", min_value=0, max_value=100, format="%.1f%%"
+                    "% Finalización",
+                    min_value=0,
+                    max_value=100,
+                    format="%.1f%%",
                 ),
             },
         )
@@ -818,13 +925,21 @@ def render_capacitacion_docente(vista=None, carrera=None):
     elif vista_modulo == "Por curso":
         st.subheader("Análisis individual por curso")
 
-        cursos = sorted([c for c in df_permitido["curso"].dropna().unique().tolist() if c != "SIN CURSO"])
+        cursos = sorted([
+            c for c in df_permitido["curso"].dropna().unique().tolist()
+            if c != "SIN CURSO"
+        ])
 
         if not cursos:
             st.warning("No hay cursos detectados.")
             return
 
-        curso_sel = st.selectbox("Selecciona curso", cursos, key="sel_curso_capacitacion")
+        curso_sel = st.selectbox(
+            "Selecciona curso",
+            cursos,
+            key="sel_curso_capacitacion",
+        )
+
         df_curso = df_permitido[df_permitido["curso"] == curso_sel]
 
         st.markdown(f"### {curso_sel}")
@@ -838,14 +953,21 @@ def render_capacitacion_docente(vista=None, carrera=None):
 
         with col1:
             st.markdown("**% en proceso vs % finalizados**")
-            st.plotly_chart(grafica_proceso_vs_finalizado(df_curso), use_container_width=True, key="grafica_proceso_vs_finalizado_curso")
+            st.plotly_chart(
+                grafica_proceso_vs_finalizado(df_curso),
+                use_container_width=True,
+                key="grafica_proceso_vs_finalizado_curso",
+            )
 
         with col2:
             st.markdown("**Docentes inscritos en el curso**")
 
             cols = [
-                "nombre_normalizado", "area_de_adscripcion", "correo_docente",
-                "avance_pct", "estatus_final",
+                "nombre_normalizado",
+                "area_de_adscripcion",
+                "correo_docente",
+                "avance_pct",
+                "estatus_final",
             ]
 
             tabla = df_curso[cols].copy()
@@ -865,7 +987,10 @@ def render_capacitacion_docente(vista=None, carrera=None):
                 key="tabla_docentes_curso",
                 column_config={
                     "Avance %": st.column_config.ProgressColumn(
-                        "Avance %", min_value=0, max_value=100, format="%.1f%%"
+                        "Avance %",
+                        min_value=0,
+                        max_value=100,
+                        format="%.1f%%",
                     ),
                 },
             )
@@ -884,14 +1009,27 @@ def render_capacitacion_docente(vista=None, carrera=None):
                 .sort_values("Docentes inscritos", ascending=False)
                 .head(5)
             )
-            st.dataframe(r1, use_container_width=True, hide_index=True, key="rank_top5_areas")
+            st.dataframe(
+                r1,
+                use_container_width=True,
+                hide_index=True,
+                key="rank_top5_areas",
+            )
 
         with col2:
             st.markdown("**Cursos con mayor demanda**")
             r2 = resumen_por_curso(df_permitido)[[
-                "Curso", "Docentes inscritos", "Inscripciones", "% Finalizados",
+                "Curso",
+                "Docentes inscritos",
+                "Inscripciones",
+                "% Finalizados",
             ]]
-            st.dataframe(r2, use_container_width=True, hide_index=True, key="rank_cursos_demanda")
+            st.dataframe(
+                r2,
+                use_container_width=True,
+                hide_index=True,
+                key="rank_cursos_demanda",
+            )
 
         st.markdown("**Docentes con mayor número de cursos finalizados**")
         r3 = docentes_top_finalizados(df_permitido)
@@ -903,7 +1041,10 @@ def render_capacitacion_docente(vista=None, carrera=None):
             key="rank_docentes_finalizados_area",
             column_config={
                 "% Finalización": st.column_config.ProgressColumn(
-                    "% Finalización", min_value=0, max_value=100, format="%.1f%%"
+                    "% Finalización",
+                    min_value=0,
+                    max_value=100,
+                    format="%.1f%%",
                 ),
             },
         )
@@ -913,9 +1054,18 @@ def render_capacitacion_docente(vista=None, carrera=None):
 
         f1, f2, f3 = st.columns(3)
 
-        areas_todas = ["Todas"] + sorted(df_permitido["area_de_adscripcion"].dropna().unique().tolist())
-        cursos_todos = ["Todos"] + sorted([c for c in df_permitido["curso"].dropna().unique().tolist() if c != "SIN CURSO"])
-        estatus_todos = ["Todos"] + sorted(df_permitido["estatus_final"].dropna().unique().tolist())
+        areas_todas = ["Todas"] + sorted(
+            df_permitido["area_de_adscripcion"].dropna().unique().tolist()
+        )
+
+        cursos_todos = ["Todos"] + sorted([
+            c for c in df_permitido["curso"].dropna().unique().tolist()
+            if c != "SIN CURSO"
+        ])
+
+        estatus_todos = ["Todos"] + sorted(
+            df_permitido["estatus_final"].dropna().unique().tolist()
+        )
 
         area_f = f1.selectbox("Área", areas_todas, key="f_area_detalle")
         curso_f = f2.selectbox("Curso", cursos_todos, key="f_curso_detalle")
@@ -925,17 +1075,26 @@ def render_capacitacion_docente(vista=None, carrera=None):
 
         if area_f != "Todas":
             df_det = df_det[df_det["area_de_adscripcion"] == area_f]
+
         if curso_f != "Todos":
             df_det = df_det[df_det["curso"] == curso_f]
+
         if estatus_f != "Todos":
             df_det = df_det[df_det["estatus_final"] == estatus_f]
 
         cols_mostrar = [
             c for c in [
-                "nombre_normalizado", "matricula", "correo_docente",
-                "area_de_adscripcion", "curso", "avance_pct",
-                "tareas_entregadas", "tareas_totales", "estatus_final",
-                "fecha_ultimo_corte", "observaciones",
+                "nombre_normalizado",
+                "matricula",
+                "correo_docente",
+                "area_de_adscripcion",
+                "curso",
+                "avance_pct",
+                "tareas_entregadas",
+                "tareas_totales",
+                "estatus_final",
+                "fecha_ultimo_corte",
+                "observaciones",
             ]
             if c in df_det.columns
         ]
@@ -963,7 +1122,10 @@ def render_capacitacion_docente(vista=None, carrera=None):
             key="tabla_detalle_capacitacion",
             column_config={
                 "Avance %": st.column_config.ProgressColumn(
-                    "Avance %", min_value=0, max_value=100, format="%.1f%%"
+                    "Avance %",
+                    min_value=0,
+                    max_value=100,
+                    format="%.1f%%",
                 ),
             },
         )
