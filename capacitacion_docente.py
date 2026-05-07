@@ -9,8 +9,18 @@ import re
 # =====================================================
 SHEET_ID = "1Cl0QQxh0Ls5EqCwzowVVV2bCscok9kXR0m_HdyoEiRw"
 
-URL_SEGUIMIENTO = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=45835274"
-URL_CONTROL_DIPLOMAS = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=CONTROL_DIPLOMAS"
+SEGUIMIENTO_GID = "45835274"
+CONTROL_DIPLOMAS_SHEET = "CONTROL_DIPLOMAS"
+
+URL_SEGUIMIENTO = (
+    f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export"
+    f"?format=csv&gid={SEGUIMIENTO_GID}"
+)
+
+URL_CONTROL_DIPLOMAS = (
+    f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq"
+    f"?tqx=out:csv&sheet={CONTROL_DIPLOMAS_SHEET}"
+)
 
 COLOR_AZUL = "#2F80ED"
 COLOR_VERDE = "#10B981"
@@ -69,13 +79,22 @@ def normalizar_columnas(df):
 
 @st.cache_data(ttl=300)
 def cargar_datos():
-    seguimiento = pd.read_csv(URL_SEGUIMIENTO)
-    seguimiento = normalizar_columnas(seguimiento)
+    try:
+        seguimiento = pd.read_csv(URL_SEGUIMIENTO)
+        seguimiento = normalizar_columnas(seguimiento)
+    except Exception as e:
+        st.error("No se pudo leer la hoja principal de seguimiento.")
+        st.caption(f"URL seguimiento: {URL_SEGUIMIENTO}")
+        st.exception(e)
+        seguimiento = pd.DataFrame()
 
     try:
         diplomas = pd.read_csv(URL_CONTROL_DIPLOMAS)
         diplomas = normalizar_columnas(diplomas)
-    except Exception:
+    except Exception as e:
+        st.error("No se pudo leer la hoja CONTROL_DIPLOMAS.")
+        st.caption(f"URL diplomas: {URL_CONTROL_DIPLOMAS}")
+        st.exception(e)
         diplomas = pd.DataFrame()
 
     return seguimiento, diplomas
@@ -237,6 +256,9 @@ def construir_curso_si_no_existe(df):
 # LIMPIEZA SEGUIMIENTO
 # =====================================================
 def limpiar_seguimiento(df):
+    if df.empty:
+        return pd.DataFrame()
+
     df = df.copy()
 
     col_area = detectar_columna(df, ALIAS_AREA)
@@ -387,17 +409,19 @@ def limpiar_diplomas(df):
     df["curso_base"] = df["nombre_curso"].astype(str).str.strip()
 
     mask_sin_nombre_curso = df["curso_base"].isin(["", "nan", "None"])
-    df.loc[mask_sin_nombre_curso, "curso_base"] = df.loc[mask_sin_nombre_curso, "curso_origen"].astype(str).str.strip()
+    df.loc[mask_sin_nombre_curso, "curso_base"] = df.loc[
+        mask_sin_nombre_curso, "curso_origen"
+    ].astype(str).str.strip()
 
     mask_sin_curso_origen = df["curso_base"].isin(["", "nan", "None"])
-    df.loc[mask_sin_curso_origen, "curso_base"] = df.loc[mask_sin_curso_origen, "id_curso"].astype(str).str.strip()
+    df.loc[mask_sin_curso_origen, "curso_base"] = df.loc[
+        mask_sin_curso_origen, "id_curso"
+    ].astype(str).str.strip()
 
     df["curso_key"] = df["curso_base"].apply(normalizar_texto)
     df["estatus_final_diploma"] = df["estatus_final"].astype(str).str.strip()
     df["estatus_norm_diploma"] = df["estatus_final_diploma"].apply(normalizar_texto)
 
-    # CONTROL_DIPLOMAS es la fuente oficial de finalización.
-    # Aun así, filtramos solo casos donde el estatus no indique error/pendiente/no.
     est = df["estatus_norm_diploma"]
 
     es_negativo = est.str.contains(
@@ -412,12 +436,9 @@ def limpiar_diplomas(df):
         na=False,
     )
 
-    # Si estatus_final está vacío pero existe en CONTROL_DIPLOMAS con matrícula/curso,
-    # también lo consideramos finalizado porque esta hoja es la fuente oficial.
     estatus_vacio = est.eq("") | est.eq("nan") | est.eq("none")
 
     df["es_finalizado_diploma"] = (es_final | estatus_vacio) & (~es_negativo)
-
     df = df[df["es_finalizado_diploma"]].copy()
 
     return df[[
@@ -441,26 +462,9 @@ def aplicar_finalizados_por_diplomas(seguimiento, diplomas):
         df["estatus_final"] = "EN_PROCESO"
         return df
 
-    set_mat_curso = set(
-        zip(
-            dip["matricula_key"].astype(str),
-            dip["curso_key"].astype(str),
-        )
-    )
-
-    set_correo_curso = set(
-        zip(
-            dip["correo_key"].astype(str),
-            dip["curso_key"].astype(str),
-        )
-    )
-
-    set_nombre_curso = set(
-        zip(
-            dip["nombre_key"].astype(str),
-            dip["curso_key"].astype(str),
-        )
-    )
+    set_mat_curso = set(zip(dip["matricula_key"].astype(str), dip["curso_key"].astype(str)))
+    set_correo_curso = set(zip(dip["correo_key"].astype(str), dip["curso_key"].astype(str)))
+    set_nombre_curso = set(zip(dip["nombre_key"].astype(str), dip["curso_key"].astype(str)))
 
     def esta_finalizado(row):
         matricula_key = str(row.get("matricula_key", ""))
@@ -470,10 +474,8 @@ def aplicar_finalizados_por_diplomas(seguimiento, diplomas):
 
         if matricula_key and curso_key and (matricula_key, curso_key) in set_mat_curso:
             return True
-
         if correo_key and curso_key and (correo_key, curso_key) in set_correo_curso:
             return True
-
         if nombre_key and curso_key and (nombre_key, curso_key) in set_nombre_curso:
             return True
 
@@ -667,13 +669,10 @@ def mostrar_kpis_generales(kpis):
 
     with c1:
         kpi_card("Docentes inscritos", kpis["docentes"], "Docentes únicos sin duplicar", COLOR_AZUL)
-
     with c2:
         kpi_card("Inscripciones", kpis["inscripciones"], "Total docente-curso", COLOR_VERDE)
-
     with c3:
         kpi_card("Cursos activos", kpis["cursos"], "Cursos detectados", COLOR_GRIS)
-
     with c4:
         kpi_card("Finalizados", kpis["finalizados"], "Según CONTROL_DIPLOMAS", COLOR_VERDE)
 
@@ -814,6 +813,11 @@ def render_capacitacion_docente(vista=None, carrera=None):
         df_raw, diplomas_raw = cargar_datos()
 
     seguimiento = limpiar_seguimiento(df_raw)
+
+    if seguimiento.empty:
+        st.error("La hoja principal de seguimiento está vacía o no se pudo leer.")
+        return
+
     diplomas = limpiar_diplomas(diplomas_raw)
 
     df = aplicar_finalizados_por_diplomas(seguimiento, diplomas)
@@ -843,9 +847,6 @@ def render_capacitacion_docente(vista=None, carrera=None):
         key="nav_capacitacion_docente",
     )
 
-    # ==================================================
-    # RESUMEN
-    # ==================================================
     if vista_modulo == "Resumen":
         mostrar_tarjetas_finalizacion_por_curso(tabla_cursos_general)
         st.divider()
@@ -913,9 +914,6 @@ def render_capacitacion_docente(vista=None, carrera=None):
                 },
             )
 
-    # ==================================================
-    # DIRECTOR DE CARRERA
-    # ==================================================
     elif vista_modulo == "Director de Carrera":
         if vista == "Director de carrera" and carrera:
             area_sel = carrera
@@ -980,9 +978,6 @@ def render_capacitacion_docente(vista=None, carrera=None):
             },
         )
 
-    # ==================================================
-    # POR CURSO
-    # ==================================================
     elif vista_modulo == "Por curso":
         st.subheader("Análisis individual por curso")
 
@@ -1045,9 +1040,6 @@ def render_capacitacion_docente(vista=None, carrera=None):
                 },
             )
 
-    # ==================================================
-    # RANKINGS
-    # ==================================================
     elif vista_modulo == "Rankings":
         st.subheader("Rankings destacados")
 
@@ -1086,9 +1078,6 @@ def render_capacitacion_docente(vista=None, carrera=None):
             },
         )
 
-    # ==================================================
-    # DETALLE GENERAL
-    # ==================================================
     elif vista_modulo == "Detalle general":
         st.subheader("Tabla completa con filtros")
 
