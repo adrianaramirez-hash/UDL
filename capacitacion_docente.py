@@ -7,9 +7,9 @@ import re
 # =====================================================
 # CONFIG
 # =====================================================
-SHEET_ID = "1Dgu3_UMAYecX-KCxLhHUe_EYiXCF68rvE2XpYwOx9lM"
+SHEET_ID = "1Cl0QQxh0Ls5EqCwzowVVV2bCscok9kXR0m_HdyoEiRw"
 
-URL_SEGUIMIENTO = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=519739604"
+URL_SEGUIMIENTO = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=45835274"
 URL_CONTROL_DIPLOMAS = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=CONTROL_DIPLOMAS"
 
 COLOR_AZUL = "#2F80ED"
