@@ -7,10 +7,9 @@ import re
 # =====================================================
 # CONFIG
 # =====================================================
-SHEET_ID = "1Cl0QQxh0Ls5EqCwzowVVV2bCscok9kXR0m_HdyoEiRw"
+SHEET_ID = "1Dgu3_UMAYecX-KCxLhHUe_EYiXCF68rvE2XpYwOx9lM"
 
-# SEGUIMIENTO_ACTUAL: hoja principal (gid=45835274 confirmado desde el URL del usuario)
-URL_SEGUIMIENTO = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=SEGUIMIENTO_ACTUAL"
+URL_SEGUIMIENTO = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=519739604"
 URL_CONTROL_DIPLOMAS = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=CONTROL_DIPLOMAS"
 
 COLOR_AZUL = "#2F80ED"
@@ -95,9 +94,9 @@ ALIAS_AREA = [
 ]
 
 ALIAS_NOMBRE = [
-    "nombre_seac",      # columna real en SEGUIMIENTO_ACTUAL
-    "nombre_forms",     # columna real en SEGUIMIENTO_ACTUAL
     "nombre_normalizado",
+    "nombre_forms",
+    "nombre_seac",
     "nombre",
     "docente",
     "nombre_docente",
@@ -113,7 +112,7 @@ ALIAS_CORREO = [
 ]
 
 ALIAS_ESTATUS = [
-    "estatus_final",    # columna real en SEGUIMIENTO_ACTUAL
+    "estatus_final",
     "estatus",
     "estado",
     "estatus_seac",
@@ -122,7 +121,7 @@ ALIAS_ESTATUS = [
 ]
 
 ALIAS_AVANCE = [
-    "avance_pct",           # columna real en SEGUIMIENTO_ACTUAL
+    "avance_pct",
     "avance",
     "porcentaje_avance",
     "porcentaje",
@@ -255,11 +254,8 @@ def limpiar_seguimiento(df):
     if col_correo and col_correo != "correo_docente":
         df = df.rename(columns={col_correo: "correo_docente"})
 
-    if col_estatus and col_estatus not in ("estatus_original", "estatus_final"):
+    if col_estatus and col_estatus != "estatus_original":
         df = df.rename(columns={col_estatus: "estatus_original"})
-    elif col_estatus == "estatus_final":
-        # La hoja ya trae estatus_final; lo usamos directamente como estatus_original
-        df = df.rename(columns={"estatus_final": "estatus_original"})
 
     if col_avance and col_avance != "avance_pct":
         df = df.rename(columns={col_avance: "avance_pct"})
@@ -280,12 +276,6 @@ def limpiar_seguimiento(df):
         "tipo_correo": "",
         "fecha_ultimo_corte": "",
         "observaciones": "",
-        # Columnas adicionales presentes en SEGUIMIENTO_ACTUAL
-        "edicion_curso": "",
-        "fuente_seac": "",
-        "numero_registro": "",
-        "asistencia": "",
-        "ultima_fecha_envio": "",
     }
 
     for col, default in defaults.items():
@@ -384,16 +374,6 @@ def limpiar_diplomas(df):
         "nombre": "",
         "correo": "",
         "estatus_final": "",
-        # Columnas adicionales presentes en CONTROL_DIPLOMAS
-        "nombre_pdf_dip": "",
-        "nombre_pdf_ideal": "",
-        "diploma_encontr": "",
-        "correo_diploma_": "",
-        "fecha_envio_dip": "",
-        "observaciones": "",
-        "pdf_sugerido": "",
-        "nivel_coincidencia": "",
-        "puntaje_coincidencia": "",
     }
 
     for col, default in defaults.items():
