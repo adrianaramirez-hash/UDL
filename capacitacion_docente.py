@@ -9,18 +9,14 @@ import re
 # =====================================================
 SHEET_ID = "1Cl0QQxh0Ls5EqCwzowVVV2bCscok9kXR0m_HdyoEiRw"
 
-URL_SEGUIMIENTO = (
-    f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq"
-    f"?tqx=out:csv&sheet=SEAC_HISTORICO"
-)
-
-URL_CONTROL_DIPLOMAS = (
-    f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq"
-    f"?tqx=out:csv&sheet=CONTROL_DIPLOMAS"
-)
+# SEGUIMIENTO_ACTUAL: hoja principal (gid=45835274 confirmado desde el URL del usuario)
+URL_SEGUIMIENTO = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=SEGUIMIENTO_ACTUAL"
+URL_CONTROL_DIPLOMAS = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=CONTROL_DIPLOMAS"
 
 COLOR_AZUL = "#2F80ED"
 COLOR_VERDE = "#10B981"
+COLOR_ROJO = "#D7263D"
+COLOR_NARANJA = "#F97316"
 COLOR_GRIS = "#374151"
 
 COLOR_MAP_SIMPLE = {
@@ -47,8 +43,7 @@ def limpiar_id(texto):
     if pd.isna(texto):
         return ""
     texto = str(texto).strip()
-    if texto.endswith(".0"):
-        texto = texto.replace(".0", "")
+    texto = texto.replace(".0", "") if texto.endswith(".0") else texto
     return texto.lower()
 
 
@@ -58,9 +53,18 @@ def limpiar_correo(texto):
     return str(texto).strip().lower()
 
 
+def normalizar_valor(texto):
+    if pd.isna(texto):
+        return ""
+    return str(texto).strip()
+
+
 def normalizar_columnas(df):
-    df = df.copy()
-    df.columns = [normalizar_texto(c) for c in df.columns]
+    columnas_originales = list(df.columns)
+    columnas_norm = [normalizar_texto(c) for c in columnas_originales]
+    mapa_original = dict(zip(columnas_norm, columnas_originales))
+    df.columns = columnas_norm
+    df.attrs["mapa_original"] = mapa_original
     return df
 
 
@@ -79,93 +83,241 @@ def cargar_datos():
 
 
 # =====================================================
+# ALIAS
+# =====================================================
+ALIAS_AREA = [
+    "area_de_adscripcion",
+    "area_adscripcion",
+    "adscripcion",
+    "area",
+    "carrera",
+    "departamento",
+]
+
+ALIAS_NOMBRE = [
+    "nombre_seac",      # columna real en SEGUIMIENTO_ACTUAL
+    "nombre_forms",     # columna real en SEGUIMIENTO_ACTUAL
+    "nombre_normalizado",
+    "nombre",
+    "docente",
+    "nombre_docente",
+    "nombre_completo",
+]
+
+ALIAS_CORREO = [
+    "correo_docente",
+    "correo",
+    "correo_electronico",
+    "direccion_de_correo_electronico",
+    "correo_seac",
+]
+
+ALIAS_ESTATUS = [
+    "estatus_final",    # columna real en SEGUIMIENTO_ACTUAL
+    "estatus",
+    "estado",
+    "estatus_seac",
+    "estado_final",
+    "situacion",
+]
+
+ALIAS_AVANCE = [
+    "avance_pct",           # columna real en SEGUIMIENTO_ACTUAL
+    "avance",
+    "porcentaje_avance",
+    "porcentaje",
+]
+
+
+def detectar_columna(df, aliases):
+    for alias in aliases:
+        cand = normalizar_texto(alias)
+        for col in df.columns:
+            if normalizar_texto(col) == cand:
+                return col
+
+    for alias in aliases:
+        cand = normalizar_texto(alias)
+        for col in df.columns:
+            if cand in normalizar_texto(col):
+                return col
+
+    return None
+
+
+# =====================================================
+# CURSO
+# =====================================================
+def extraer_curso_desde_columna(nombre_columna_original):
+    texto = str(nombre_columna_original)
+
+    m = re.search(r"\[(.*?)\]", texto)
+    if m:
+        return m.group(1).strip()
+
+    texto = texto.replace("Selecciona el taller al que deseas inscribirte", "")
+    texto = texto.replace(
+        "en caso de no no desees inscribirte a algún curso selecciona NO INSCRIBIRME",
+        "",
+    )
+    texto = texto.replace(
+        "en caso de no desees inscribirte a algún curso selecciona NO INSCRIBIRME",
+        "",
+    )
+    texto = texto.replace(",", "")
+    texto = texto.strip()
+
+    return texto if texto else "SIN CURSO"
+
+
+def construir_curso_si_no_existe(df):
+    df = df.copy()
+
+    if "curso" in df.columns and df["curso"].notna().any():
+        df["curso"] = df["curso"].astype(str).str.strip()
+        return df
+
+    mapa_original = df.attrs.get("mapa_original", {})
+
+    posibles_cols_curso = []
+    for col in df.columns:
+        col_norm = normalizar_texto(col)
+        col_original = mapa_original.get(col, col)
+
+        if (
+            "taller" in col_norm
+            or "curso" in col_norm
+            or "capacitacion" in col_norm
+            or "inscribirte" in normalizar_texto(str(col_original))
+        ):
+            posibles_cols_curso.append(col)
+
+    posibles_cols_curso = [
+        c for c in posibles_cols_curso
+        if c not in ["curso", "nombre_curso", "estatus_final", "tipo_correo"]
+    ]
+
+    if not posibles_cols_curso:
+        df["curso"] = "SIN CURSO"
+        return df
+
+    registros = []
+    columnas_base = [c for c in df.columns if c not in posibles_cols_curso]
+
+    for _, row in df.iterrows():
+        for col in posibles_cols_curso:
+            valor = normalizar_valor(row.get(col, ""))
+            valor_norm = normalizar_texto(valor)
+
+            if not valor_norm:
+                continue
+            if "no_inscribirme" in valor_norm or "no_me_inscribo" in valor_norm:
+                continue
+            if valor_norm in ["nan", "sin_dato", "no"]:
+                continue
+
+            nuevo = row[columnas_base].to_dict()
+            col_original = mapa_original.get(col, col)
+            curso_desde_columna = extraer_curso_desde_columna(col_original)
+
+            if "inscrib" in valor_norm or valor_norm in ["si", "sí"]:
+                nuevo["curso"] = curso_desde_columna
+            else:
+                nuevo["curso"] = valor
+
+            registros.append(nuevo)
+
+    if registros:
+        return pd.DataFrame(registros)
+
+    df["curso"] = "SIN CURSO"
+    return df
+
+
+# =====================================================
 # LIMPIEZA SEGUIMIENTO
 # =====================================================
 def limpiar_seguimiento(df):
     df = df.copy()
 
-    # Renombrar columnas esperadas de SEAC_HISTORICO
-    rename_map = {
-        "nombre_seac": "nombre_normalizado",
-        "correo_seac": "correo_docente",
-    }
+    col_area = detectar_columna(df, ALIAS_AREA)
+    col_nombre = detectar_columna(df, ALIAS_NOMBRE)
+    col_correo = detectar_columna(df, ALIAS_CORREO)
+    col_estatus = detectar_columna(df, ALIAS_ESTATUS)
+    col_avance = detectar_columna(df, ALIAS_AVANCE)
 
-    for old, new in rename_map.items():
-        if old in df.columns and new not in df.columns:
-            df = df.rename(columns={old: new})
+    if col_area and col_area != "area_de_adscripcion":
+        df = df.rename(columns={col_area: "area_de_adscripcion"})
 
-    columnas_base = {
-        "fecha_corte": "",
+    if col_nombre and col_nombre != "nombre_normalizado":
+        df = df.rename(columns={col_nombre: "nombre_normalizado"})
+
+    if col_correo and col_correo != "correo_docente":
+        df = df.rename(columns={col_correo: "correo_docente"})
+
+    if col_estatus and col_estatus not in ("estatus_original", "estatus_final"):
+        df = df.rename(columns={col_estatus: "estatus_original"})
+    elif col_estatus == "estatus_final":
+        # La hoja ya trae estatus_final; lo usamos directamente como estatus_original
+        df = df.rename(columns={"estatus_final": "estatus_original"})
+
+    if col_avance and col_avance != "avance_pct":
+        df = df.rename(columns={col_avance: "avance_pct"})
+
+    df = construir_curso_si_no_existe(df)
+
+    defaults = {
+        "area_de_adscripcion": "SIN ÁREA",
         "curso": "SIN CURSO",
-        "matricula": "",
+        "estatus_original": "",
         "nombre_normalizado": "SIN NOMBRE",
         "correo_docente": "",
-        "tareas": "0 / 0",
-        "area_de_adscripcion": "SIN ÁREA",
+        "avance_pct": 0,
+        "tareas_entregadas": 0,
+        "tareas_totales": 0,
+        "matricula": "",
+        "requiere_correo": "",
+        "tipo_correo": "",
+        "fecha_ultimo_corte": "",
+        "observaciones": "",
+        # Columnas adicionales presentes en SEGUIMIENTO_ACTUAL
+        "edicion_curso": "",
+        "fuente_seac": "",
+        "numero_registro": "",
+        "asistencia": "",
+        "ultima_fecha_envio": "",
     }
 
-    for col, default in columnas_base.items():
+    for col, default in defaults.items():
         if col not in df.columns:
             df[col] = default
 
-    # Quitar filas vacías
-    df["curso"] = df["curso"].astype(str).str.strip()
-    df["nombre_normalizado"] = df["nombre_normalizado"].astype(str).str.strip()
-    df["matricula"] = df["matricula"].apply(limpiar_id)
-    df["correo_docente"] = df["correo_docente"].apply(limpiar_correo)
+    if "tareas" in df.columns:
+        tareas_split = df["tareas"].astype(str).str.extract(r"(\d+)\s*/\s*(\d+)")
+        if tareas_split.notna().any().any():
+            df["tareas_entregadas"] = pd.to_numeric(tareas_split[0], errors="coerce").fillna(
+                df["tareas_entregadas"]
+            )
+            df["tareas_totales"] = pd.to_numeric(tareas_split[1], errors="coerce").fillna(
+                df["tareas_totales"]
+            )
 
-    df = df[
-        (df["curso"] != "") &
-        (df["curso"].str.lower() != "nan") &
-        (df["curso"] != "SIN CURSO") &
-        (df["nombre_normalizado"] != "") &
-        (df["nombre_normalizado"].str.lower() != "nan")
-    ].copy()
+    df["tareas_entregadas"] = pd.to_numeric(df["tareas_entregadas"], errors="coerce").fillna(0)
+    df["tareas_totales"] = pd.to_numeric(df["tareas_totales"], errors="coerce").fillna(0)
 
-    # Fecha de corte
-    df["fecha_corte"] = pd.to_datetime(df["fecha_corte"], errors="coerce")
+    df["avance_pct"] = pd.to_numeric(df["avance_pct"], errors="coerce").fillna(0)
 
-    # Usar solo el último corte por curso
-    if df["fecha_corte"].notna().any():
-        ultimos = (
-            df.groupby("curso")["fecha_corte"]
-            .max()
-            .reset_index()
-            .rename(columns={"fecha_corte": "fecha_corte_max"})
-        )
+    if df["avance_pct"].max() <= 1 and df["avance_pct"].max() > 0:
+        df["avance_pct"] = df["avance_pct"] * 100
 
-        df = df.merge(ultimos, on="curso", how="left")
-        df = df[df["fecha_corte"] == df["fecha_corte_max"]].copy()
-        df = df.drop(columns=["fecha_corte_max"], errors="ignore")
-
-    # Tareas tipo 2 / 2
-    tareas_split = df["tareas"].astype(str).str.extract(r"(\d+)\s*/\s*(\d+)")
-    df["tareas_entregadas"] = pd.to_numeric(tareas_split[0], errors="coerce").fillna(0)
-    df["tareas_totales"] = pd.to_numeric(tareas_split[1], errors="coerce").fillna(0)
-
-    df["avance_pct"] = 0.0
-    mask_tareas = df["tareas_totales"] > 0
-    df.loc[mask_tareas, "avance_pct"] = (
-        df.loc[mask_tareas, "tareas_entregadas"] /
-        df.loc[mask_tareas, "tareas_totales"] * 100
+    mask_avance_cero = (df["avance_pct"] == 0) & (df["tareas_totales"] > 0)
+    df.loc[mask_avance_cero, "avance_pct"] = (
+        df.loc[mask_avance_cero, "tareas_entregadas"]
+        / df.loc[mask_avance_cero, "tareas_totales"]
+        * 100
     )
+
     df["avance_pct"] = df["avance_pct"].clip(lower=0, upper=100)
-
-    # Evitar duplicados del mismo docente en el mismo curso
-    df["matricula_key"] = df["matricula"].apply(limpiar_id)
-    df["correo_key"] = df["correo_docente"].apply(limpiar_correo)
-    df["nombre_key"] = df["nombre_normalizado"].apply(normalizar_texto)
-    df["curso_key"] = df["curso"].apply(normalizar_texto)
-
-    df = df.sort_values(
-        by=["curso", "matricula_key", "correo_key", "nombre_key", "avance_pct"],
-        ascending=[True, True, True, True, False],
-    )
-
-    df = df.drop_duplicates(
-        subset=["curso_key", "matricula_key", "correo_key", "nombre_key"],
-        keep="first",
-    )
 
     df["area_de_adscripcion"] = (
         df["area_de_adscripcion"]
@@ -175,6 +327,36 @@ def limpiar_seguimiento(df):
         .replace("NAN", "SIN ÁREA")
         .replace("", "SIN ÁREA")
     )
+
+    df["curso"] = (
+        df["curso"]
+        .astype(str)
+        .str.strip()
+        .replace("nan", "SIN CURSO")
+        .replace("", "SIN CURSO")
+    )
+
+    df["nombre_normalizado"] = (
+        df["nombre_normalizado"]
+        .astype(str)
+        .str.strip()
+        .replace("nan", "SIN NOMBRE")
+        .replace("", "SIN NOMBRE")
+    )
+
+    df["correo_docente"] = (
+        df["correo_docente"]
+        .astype(str)
+        .str.strip()
+        .replace("nan", "")
+    )
+
+    df["matricula"] = df["matricula"].apply(limpiar_id)
+
+    df["curso_key"] = df["curso"].apply(normalizar_texto)
+    df["matricula_key"] = df["matricula"].apply(limpiar_id)
+    df["correo_key"] = df["correo_docente"].apply(limpiar_correo)
+    df["nombre_key"] = df["nombre_normalizado"].apply(normalizar_texto)
 
     return df
 
@@ -202,6 +384,16 @@ def limpiar_diplomas(df):
         "nombre": "",
         "correo": "",
         "estatus_final": "",
+        # Columnas adicionales presentes en CONTROL_DIPLOMAS
+        "nombre_pdf_dip": "",
+        "nombre_pdf_ideal": "",
+        "diploma_encontr": "",
+        "correo_diploma_": "",
+        "fecha_envio_dip": "",
+        "observaciones": "",
+        "pdf_sugerido": "",
+        "nivel_coincidencia": "",
+        "puntaje_coincidencia": "",
     }
 
     for col, default in defaults.items():
@@ -214,16 +406,18 @@ def limpiar_diplomas(df):
 
     df["curso_base"] = df["nombre_curso"].astype(str).str.strip()
 
-    mask = df["curso_base"].isin(["", "nan", "None"])
-    df.loc[mask, "curso_base"] = df.loc[mask, "curso_origen"].astype(str).str.strip()
+    mask_sin_nombre_curso = df["curso_base"].isin(["", "nan", "None"])
+    df.loc[mask_sin_nombre_curso, "curso_base"] = df.loc[mask_sin_nombre_curso, "curso_origen"].astype(str).str.strip()
 
-    mask = df["curso_base"].isin(["", "nan", "None"])
-    df.loc[mask, "curso_base"] = df.loc[mask, "id_curso"].astype(str).str.strip()
+    mask_sin_curso_origen = df["curso_base"].isin(["", "nan", "None"])
+    df.loc[mask_sin_curso_origen, "curso_base"] = df.loc[mask_sin_curso_origen, "id_curso"].astype(str).str.strip()
 
     df["curso_key"] = df["curso_base"].apply(normalizar_texto)
     df["estatus_final_diploma"] = df["estatus_final"].astype(str).str.strip()
     df["estatus_norm_diploma"] = df["estatus_final_diploma"].apply(normalizar_texto)
 
+    # CONTROL_DIPLOMAS es la fuente oficial de finalización.
+    # Aun así, filtramos solo casos donde el estatus no indique error/pendiente/no.
     est = df["estatus_norm_diploma"]
 
     es_negativo = est.str.contains(
@@ -238,9 +432,12 @@ def limpiar_diplomas(df):
         na=False,
     )
 
+    # Si estatus_final está vacío pero existe en CONTROL_DIPLOMAS con matrícula/curso,
+    # también lo consideramos finalizado porque esta hoja es la fuente oficial.
     estatus_vacio = est.eq("") | est.eq("nan") | est.eq("none")
 
     df["es_finalizado_diploma"] = (es_final | estatus_vacio) & (~es_negativo)
+
     df = df[df["es_finalizado_diploma"]].copy()
 
     return df[[
@@ -253,7 +450,7 @@ def limpiar_diplomas(df):
 
 
 # =====================================================
-# CRUCE FINALIZADOS
+# CRUCE SEGUIMIENTO + CONTROL_DIPLOMAS
 # =====================================================
 def aplicar_finalizados_por_diplomas(seguimiento, diplomas):
     df = seguimiento.copy()
@@ -264,26 +461,46 @@ def aplicar_finalizados_por_diplomas(seguimiento, diplomas):
         df["estatus_final"] = "EN_PROCESO"
         return df
 
-    set_mat_curso = set(zip(dip["matricula_key"], dip["curso_key"]))
-    set_correo_curso = set(zip(dip["correo_key"], dip["curso_key"]))
-    set_nombre_curso = set(zip(dip["nombre_key"], dip["curso_key"]))
+    set_mat_curso = set(
+        zip(
+            dip["matricula_key"].astype(str),
+            dip["curso_key"].astype(str),
+        )
+    )
+
+    set_correo_curso = set(
+        zip(
+            dip["correo_key"].astype(str),
+            dip["curso_key"].astype(str),
+        )
+    )
+
+    set_nombre_curso = set(
+        zip(
+            dip["nombre_key"].astype(str),
+            dip["curso_key"].astype(str),
+        )
+    )
 
     def esta_finalizado(row):
-        mat = row.get("matricula_key", "")
-        correo = row.get("correo_key", "")
-        nombre = row.get("nombre_key", "")
-        curso = row.get("curso_key", "")
+        matricula_key = str(row.get("matricula_key", ""))
+        correo_key = str(row.get("correo_key", ""))
+        nombre_key = str(row.get("nombre_key", ""))
+        curso_key = str(row.get("curso_key", ""))
 
-        if mat and curso and (mat, curso) in set_mat_curso:
+        if matricula_key and curso_key and (matricula_key, curso_key) in set_mat_curso:
             return True
-        if correo and curso and (correo, curso) in set_correo_curso:
+
+        if correo_key and curso_key and (correo_key, curso_key) in set_correo_curso:
             return True
-        if nombre and curso and (nombre, curso) in set_nombre_curso:
+
+        if nombre_key and curso_key and (nombre_key, curso_key) in set_nombre_curso:
             return True
 
         return False
 
     df["finalizado_oficial"] = df.apply(esta_finalizado, axis=1)
+
     df["estatus_final"] = df["finalizado_oficial"].map({
         True: "FINALIZADO",
         False: "EN_PROCESO",
@@ -402,10 +619,7 @@ def tabla_resumen_docentes(df):
         "pct_fin": "% Finalización",
     })
 
-    return resumen.sort_values(
-        ["Cursos finalizados", "Cursos inscritos"],
-        ascending=False,
-    ).reset_index(drop=True)
+    return resumen.sort_values(["Cursos finalizados", "Cursos inscritos"], ascending=False).reset_index(drop=True)
 
 
 def docentes_top_finalizados(df):
@@ -413,10 +627,7 @@ def docentes_top_finalizados(df):
     t = t[t["Cursos finalizados"] > 0].copy()
     return t[[
         "Docente", "Área", "Cursos inscritos", "Cursos finalizados", "% Finalización"
-    ]].sort_values(
-        ["Cursos finalizados", "% Finalización"],
-        ascending=False,
-    ).head(15)
+    ]].sort_values(["Cursos finalizados", "% Finalización"], ascending=False).head(15)
 
 
 # =====================================================
@@ -502,11 +713,16 @@ def mostrar_tarjetas_finalizacion_por_curso(tabla_cursos):
         cols = st.columns(cols_por_fila)
 
         for idx, row in enumerate(fila):
+            curso = row["Curso"]
+            pct = row["% Finalizados"]
+            finalizados = row["Finalizados"]
+            inscripciones = row["Inscripciones"]
+
             with cols[idx]:
                 kpi_card(
-                    row["Curso"],
-                    f"{row['% Finalizados']}%",
-                    f"{row['Finalizados']} de {row['Inscripciones']} inscripciones finalizadas",
+                    curso,
+                    f"{pct}%",
+                    f"{finalizados} de {inscripciones} inscripciones finalizadas",
                     COLOR_VERDE,
                 )
 
@@ -647,6 +863,9 @@ def render_capacitacion_docente(vista=None, carrera=None):
         key="nav_capacitacion_docente",
     )
 
+    # ==================================================
+    # RESUMEN
+    # ==================================================
     if vista_modulo == "Resumen":
         mostrar_tarjetas_finalizacion_por_curso(tabla_cursos_general)
         st.divider()
@@ -714,6 +933,9 @@ def render_capacitacion_docente(vista=None, carrera=None):
                 },
             )
 
+    # ==================================================
+    # DIRECTOR DE CARRERA
+    # ==================================================
     elif vista_modulo == "Director de Carrera":
         if vista == "Director de carrera" and carrera:
             area_sel = carrera
@@ -778,6 +1000,9 @@ def render_capacitacion_docente(vista=None, carrera=None):
             },
         )
 
+    # ==================================================
+    # POR CURSO
+    # ==================================================
     elif vista_modulo == "Por curso":
         st.subheader("Análisis individual por curso")
 
@@ -840,6 +1065,9 @@ def render_capacitacion_docente(vista=None, carrera=None):
                 },
             )
 
+    # ==================================================
+    # RANKINGS
+    # ==================================================
     elif vista_modulo == "Rankings":
         st.subheader("Rankings destacados")
 
@@ -878,6 +1106,9 @@ def render_capacitacion_docente(vista=None, carrera=None):
             },
         )
 
+    # ==================================================
+    # DETALLE GENERAL
+    # ==================================================
     elif vista_modulo == "Detalle general":
         st.subheader("Tabla completa con filtros")
 
@@ -902,33 +1133,33 @@ def render_capacitacion_docente(vista=None, carrera=None):
 
         cols_mostrar = [
             c for c in [
-                "fecha_corte",
                 "nombre_normalizado",
                 "matricula",
                 "correo_docente",
                 "area_de_adscripcion",
                 "curso",
-                "tareas",
                 "avance_pct",
                 "tareas_entregadas",
                 "tareas_totales",
                 "estatus_final",
+                "fecha_ultimo_corte",
+                "observaciones",
             ]
             if c in df_det.columns
         ]
 
         tabla_det = df_det[cols_mostrar].rename(columns={
-            "fecha_corte": "Fecha corte",
             "nombre_normalizado": "Docente",
             "matricula": "Matrícula",
             "correo_docente": "Correo",
             "area_de_adscripcion": "Área",
             "curso": "Curso",
-            "tareas": "Tareas",
             "avance_pct": "Avance %",
             "tareas_entregadas": "T. Entregadas",
             "tareas_totales": "T. Totales",
             "estatus_final": "Estatus",
+            "fecha_ultimo_corte": "Último corte",
+            "observaciones": "Observaciones",
         }).reset_index(drop=True)
 
         st.caption(f"{len(tabla_det)} registros encontrados")
