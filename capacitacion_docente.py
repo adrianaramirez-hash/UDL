@@ -35,6 +35,7 @@ COLOR_MAP_SIMPLE = {
 def normalizar_texto(texto):
     if not isinstance(texto, str):
         return ""
+
     texto = unicodedata.normalize("NFD", texto)
     texto = "".join(c for c in texto if unicodedata.category(c) != "Mn")
     texto = texto.lower().strip()
@@ -46,15 +47,19 @@ def normalizar_texto(texto):
 def limpiar_id(texto):
     if pd.isna(texto):
         return ""
+
     texto = str(texto).strip()
+
     if texto.endswith(".0"):
         texto = texto.replace(".0", "")
+
     return texto.lower()
 
 
 def limpiar_correo(texto):
     if pd.isna(texto):
         return ""
+
     return str(texto).strip().lower()
 
 
@@ -221,6 +226,8 @@ def limpiar_seguimiento(df):
 
     df["avance_pct"] = df["avance_pct"].clip(lower=0, upper=100)
 
+    df["estatus_original_norm"] = df["estatus_final"].apply(normalizar_texto)
+
     df["curso_key"] = df["curso"].apply(normalizar_texto)
     df["matricula_key"] = df["matricula"].apply(limpiar_id)
     df["correo_key"] = df["correo_docente"].apply(limpiar_correo)
@@ -259,54 +266,29 @@ def limpiar_diplomas(df):
         if col not in df.columns:
             df[col] = default
 
-    df["estatus_final_diploma"] = (
-        df["estatus_final"]
-        .astype(str)
-        .str.strip()
-    )
+    df["estatus_final_diploma"] = df["estatus_final"].astype(str).str.strip()
+    df["estatus_norm_diploma"] = df["estatus_final_diploma"].apply(normalizar_texto)
 
-    df["estatus_norm_diploma"] = (
-        df["estatus_final_diploma"]
-        .apply(normalizar_texto)
-    )
-
-    # Solo cuenta si CONTROL_DIPLOMAS dice FINALIZADO
+    # Solo cuenta como finalizado si CONTROL_DIPLOMAS dice FINALIZADO
     df = df[
-        df["estatus_norm_diploma"]
-        .str.contains("finaliz", case=False, na=False)
+        df["estatus_norm_diploma"].str.contains("finaliz", case=False, na=False)
     ].copy()
 
     df["matricula_key"] = df["matricula"].apply(limpiar_id)
     df["correo_key"] = df["correo"].apply(limpiar_correo)
     df["nombre_key"] = df["nombre"].apply(normalizar_texto)
 
-    # En tu archivo actual, el curso correcto está en la columna "curso"
-    df["curso_base"] = (
-        df["curso"]
-        .astype(str)
-        .str.strip()
-    )
+    # En CONTROL_DIPLOMAS el curso correcto viene en la columna "curso"
+    df["curso_base"] = df["curso"].astype(str).str.strip()
 
     mask = df["curso_base"].isin(["", "nan", "None"])
-    df.loc[mask, "curso_base"] = (
-        df.loc[mask, "nombre_curso"]
-        .astype(str)
-        .str.strip()
-    )
+    df.loc[mask, "curso_base"] = df.loc[mask, "nombre_curso"].astype(str).str.strip()
 
     mask = df["curso_base"].isin(["", "nan", "None"])
-    df.loc[mask, "curso_base"] = (
-        df.loc[mask, "curso_origen"]
-        .astype(str)
-        .str.strip()
-    )
+    df.loc[mask, "curso_base"] = df.loc[mask, "curso_origen"].astype(str).str.strip()
 
     mask = df["curso_base"].isin(["", "nan", "None"])
-    df.loc[mask, "curso_base"] = (
-        df.loc[mask, "id_curso"]
-        .astype(str)
-        .str.strip()
-    )
+    df.loc[mask, "curso_base"] = df.loc[mask, "id_curso"].astype(str).str.strip()
 
     df["curso_key"] = df["curso_base"].apply(normalizar_texto)
 
@@ -327,49 +309,61 @@ def aplicar_finalizados_por_diplomas(seguimiento, diplomas):
     dip = diplomas.copy()
 
     if dip.empty:
-        df["finalizado_oficial"] = False
-        df["estatus_final"] = "EN_PROCESO"
-        return df
-
-    set_mat_curso = set(
-        zip(
+        df["finalizado_oficial"] = (
+            df["estatus_original_norm"].str.contains("finaliz", case=False, na=False)
+            | (df["avance_pct"] >= 100)
+        )
+    else:
+        set_mat_curso = set(zip(
             dip["matricula_key"].astype(str),
             dip["curso_key"].astype(str),
-        )
-    )
+        ))
 
-    set_correo_curso = set(
-        zip(
+        set_correo_curso = set(zip(
             dip["correo_key"].astype(str),
             dip["curso_key"].astype(str),
-        )
-    )
+        ))
 
-    set_nombre_curso = set(
-        zip(
+        set_nombre_curso = set(zip(
             dip["nombre_key"].astype(str),
             dip["curso_key"].astype(str),
+        ))
+
+        def esta_en_control_diplomas(row):
+            matricula_key = str(row.get("matricula_key", "")).strip()
+            correo_key = str(row.get("correo_key", "")).strip()
+            nombre_key = str(row.get("nombre_key", "")).strip()
+            curso_key = str(row.get("curso_key", "")).strip()
+
+            if matricula_key and curso_key and (matricula_key, curso_key) in set_mat_curso:
+                return True
+
+            if correo_key and curso_key and (correo_key, curso_key) in set_correo_curso:
+                return True
+
+            if nombre_key and curso_key and (nombre_key, curso_key) in set_nombre_curso:
+                return True
+
+            return False
+
+        df["finalizado_por_diploma"] = df.apply(esta_en_control_diplomas, axis=1)
+
+        df["finalizado_por_seguimiento"] = (
+            df["estatus_original_norm"].str.contains("finaliz", case=False, na=False)
+            | (df["avance_pct"] >= 100)
+            | (
+                (df["tareas_totales"] > 0)
+                & (df["tareas_entregadas"] >= df["tareas_totales"])
+            )
         )
-    )
 
-    def esta_finalizado(row):
-        matricula_key = str(row.get("matricula_key", "")).strip()
-        correo_key = str(row.get("correo_key", "")).strip()
-        nombre_key = str(row.get("nombre_key", "")).strip()
-        curso_key = str(row.get("curso_key", "")).strip()
-
-        if matricula_key and curso_key and (matricula_key, curso_key) in set_mat_curso:
-            return True
-
-        if correo_key and curso_key and (correo_key, curso_key) in set_correo_curso:
-            return True
-
-        if nombre_key and curso_key and (nombre_key, curso_key) in set_nombre_curso:
-            return True
-
-        return False
-
-    df["finalizado_oficial"] = df.apply(esta_finalizado, axis=1)
+        # Regla final:
+        # Finalizado si coincide en CONTROL_DIPLOMAS por docente + curso
+        # O si SEGUIMIENTO_ACTUAL ya lo marca como FINALIZADO / 100%.
+        df["finalizado_oficial"] = (
+            df["finalizado_por_diploma"]
+            | df["finalizado_por_seguimiento"]
+        )
 
     df["estatus_final"] = df["finalizado_oficial"].map({
         True: "FINALIZADO",
@@ -600,7 +594,7 @@ def mostrar_kpis_generales(kpis):
         kpi_card(
             "Finalizados",
             kpis["finalizados"],
-            "Según CONTROL_DIPLOMAS",
+            "Según seguimiento y CONTROL_DIPLOMAS",
             COLOR_VERDE,
         )
 
