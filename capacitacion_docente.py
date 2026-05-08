@@ -9,10 +9,8 @@ import re
 # =====================================================
 SHEET_ID = "1Dgu3_UMAYecX-KCxLhHUe_EYiXCF68rvE2XpYwOx9lM"
 
-# Hoja principal con estatus ya calculado (FINALIZADO / EN_PROCESO)
-URL_SEGUIMIENTO = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=SEGUIMIENTO_ACTUAL"
-# Hoja con área de adscripción por docente/curso
-URL_INSCRIPCIONES = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=INSCRIPCIONES_SYNC"
+# Hoja DASHBOARD: contiene seguimiento + área de adscripción ya integrada
+URL_DASHBOARD = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=DASHBOARD"
 
 COLOR_AZUL = "#2F80ED"
 COLOR_VERDE = "#10B981"
@@ -71,18 +69,10 @@ def normalizar_columnas(df):
 
 @st.cache_data(ttl=300)
 def cargar_datos():
-    # Hoja SEGUIMIENTO_ACTUAL — fuente oficial de estatus
-    seguimiento = pd.read_csv(URL_SEGUIMIENTO)
-    seguimiento = normalizar_columnas(seguimiento)
-
-    # Hoja INSCRIPCIONES_SYNC — fuente del área de adscripción
-    try:
-        inscripciones = pd.read_csv(URL_INSCRIPCIONES)
-        inscripciones = normalizar_columnas(inscripciones)
-    except Exception:
-        inscripciones = pd.DataFrame()
-
-    return seguimiento, inscripciones
+    # Hoja DASHBOARD — fuente unificada con estatus y área de adscripción integrados
+    dashboard = pd.read_csv(URL_DASHBOARD)
+    dashboard = normalizar_columnas(dashboard)
+    return dashboard
 
 
 # =====================================================
@@ -341,82 +331,6 @@ def limpiar_seguimiento(df):
 
     return df
 
-
-# =====================================================
-# INCORPORAR ÁREA DESDE INSCRIPCIONES_SYNC
-# =====================================================
-def incorporar_area(seguimiento, inscripciones):
-    """
-    INSCRIPCIONES_SYNC tiene: correo_docente, curso_inscrito, area_adscripcion.
-    Se cruza por correo + curso para traer el área a SEGUIMIENTO_ACTUAL.
-    Fallback: solo por correo si no hay coincidencia correo+curso.
-    """
-    df = seguimiento.copy()
-
-    if inscripciones.empty:
-        df["area_de_adscripcion"] = "SIN ÁREA"
-        return df
-
-    ins = inscripciones.copy()
-
-    col_area_ins = detectar_columna(ins, ALIAS_AREA)
-    col_correo_ins = detectar_columna(ins, ALIAS_CORREO)
-    col_curso_ins = detectar_columna(ins, ["curso_inscrito", "curso", "taller"])
-
-    if not col_area_ins or not col_correo_ins:
-        df["area_de_adscripcion"] = "SIN ÁREA"
-        return df
-
-    ins = ins.rename(columns={
-        col_area_ins: "area_ins",
-        col_correo_ins: "correo_ins",
-    })
-
-    if col_curso_ins:
-        ins = ins.rename(columns={col_curso_ins: "curso_ins"})
-        ins["curso_ins"] = ins["curso_ins"].astype(str).str.strip()
-    else:
-        ins["curso_ins"] = ""
-
-    ins["correo_ins"] = ins["correo_ins"].apply(limpiar_correo)
-    ins["area_ins"] = (
-        ins["area_ins"]
-        .astype(str)
-        .str.strip()
-        .str.upper()
-        .replace("NAN", "SIN ÁREA")
-        .replace("", "SIN ÁREA")
-    )
-
-    # Mapa 1: correo + curso → área
-    mapa_correo_curso = {}
-    for _, row in ins.iterrows():
-        key = (row["correo_ins"], normalizar_texto(str(row["curso_ins"])))
-        if key not in mapa_correo_curso and row["area_ins"] not in ("SIN ÁREA", ""):
-            mapa_correo_curso[key] = row["area_ins"]
-
-    # Mapa 2: solo correo → área (fallback)
-    mapa_correo = {}
-    for _, row in ins.iterrows():
-        key = row["correo_ins"]
-        if key not in mapa_correo and row["area_ins"] not in ("SIN ÁREA", ""):
-            mapa_correo[key] = row["area_ins"]
-
-    def obtener_area(row):
-        correo = limpiar_correo(str(row.get("correo_docente", "")))
-        curso_key = normalizar_texto(str(row.get("curso", "")))
-
-        area = mapa_correo_curso.get((correo, curso_key))
-        if area:
-            return area
-        area = mapa_correo.get(correo)
-        if area:
-            return area
-        return "SIN ÁREA"
-
-    df["area_de_adscripcion"] = df.apply(obtener_area, axis=1)
-
-    return df
 
 
 # =====================================================
@@ -741,10 +655,13 @@ def render_capacitacion_docente(vista=None, carrera=None):
     st.caption("Seguimiento de docentes inscritos, cursos activos, avance y finalización.")
 
     with st.spinner("Cargando datos de capacitación..."):
-        df_raw, inscripciones_raw = cargar_datos()
+        df_raw = cargar_datos()
 
-    seguimiento = limpiar_seguimiento(df_raw)
-    df = incorporar_area(seguimiento, inscripciones_raw)
+    df = limpiar_seguimiento(df_raw)
+
+    # area_de_adscripcion ya viene en DASHBOARD — no es necesario cruzar con INSCRIPCIONES_SYNC
+    if "area_de_adscripcion" not in df.columns:
+        df["area_de_adscripcion"] = "SIN ÁREA"
 
     df_permitido = filtrar_por_carrera_si_aplica(df, vista, carrera)
 
