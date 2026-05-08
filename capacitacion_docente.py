@@ -4,11 +4,15 @@ import plotly.express as px
 import unicodedata
 import re
 
+# =====================================================
+# CONFIG
+# =====================================================
 SHEET_ID = "1Dgu3_UMAYecX-KCxLhHUe_EYiXCF68rvE2XpYwOx9lM"
 
+# Hoja principal con estatus ya calculado (FINALIZADO / EN_PROCESO)
 URL_SEGUIMIENTO = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=SEGUIMIENTO_ACTUAL"
+# Hoja con área de adscripción por docente/curso
 URL_INSCRIPCIONES = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=INSCRIPCIONES_SYNC"
-URL_AJUSTES = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=AJUSTES_MANUALES"
 
 COLOR_AZUL = "#2F80ED"
 COLOR_VERDE = "#10B981"
@@ -22,6 +26,9 @@ COLOR_MAP_SIMPLE = {
 }
 
 
+# =====================================================
+# UTILIDADES
+# =====================================================
 def normalizar_texto(texto):
     if not isinstance(texto, str):
         return ""
@@ -64,24 +71,23 @@ def normalizar_columnas(df):
 
 @st.cache_data(ttl=300)
 def cargar_datos():
+    # Hoja SEGUIMIENTO_ACTUAL — fuente oficial de estatus
     seguimiento = pd.read_csv(URL_SEGUIMIENTO)
     seguimiento = normalizar_columnas(seguimiento)
 
+    # Hoja INSCRIPCIONES_SYNC — fuente del área de adscripción
     try:
         inscripciones = pd.read_csv(URL_INSCRIPCIONES)
         inscripciones = normalizar_columnas(inscripciones)
     except Exception:
         inscripciones = pd.DataFrame()
 
-    try:
-        ajustes = pd.read_csv(URL_AJUSTES)
-        ajustes = normalizar_columnas(ajustes)
-    except Exception:
-        ajustes = pd.DataFrame()
-
-    return seguimiento, inscripciones, ajustes
+    return seguimiento, inscripciones
 
 
+# =====================================================
+# ALIAS
+# =====================================================
 ALIAS_AREA = [
     "area_adscripcion",
     "area_de_adscripcion",
@@ -142,6 +148,9 @@ def detectar_columna(df, aliases):
     return None
 
 
+# =====================================================
+# CURSO
+# =====================================================
 def extraer_curso_desde_columna(nombre_columna_original):
     texto = str(nombre_columna_original)
 
@@ -228,6 +237,9 @@ def construir_curso_si_no_existe(df):
     return df
 
 
+# =====================================================
+# LIMPIEZA SEGUIMIENTO
+# =====================================================
 def limpiar_seguimiento(df):
     df = df.copy()
 
@@ -243,6 +255,9 @@ def limpiar_seguimiento(df):
 
     if col_avance and col_avance != "avance_pct":
         df = df.rename(columns={col_avance: "avance_pct"})
+
+    # estatus_final ya viene con los valores FINALIZADO / EN_PROCESO desde SEGUIMIENTO_ACTUAL
+    # no se renombra ni se sobreescribe
 
     df = construir_curso_si_no_existe(df)
 
@@ -308,6 +323,7 @@ def limpiar_seguimiento(df):
 
     df["matricula"] = df["matricula"].apply(limpiar_id)
 
+    # Leer estatus_final directamente de la hoja y derivar finalizado_oficial
     df["estatus_final"] = (
         df["estatus_final"]
         .astype(str)
@@ -316,151 +332,25 @@ def limpiar_seguimiento(df):
         .replace("NAN", "EN_PROCESO")
         .replace("", "EN_PROCESO")
     )
+    df["finalizado_oficial"] = df["estatus_final"] == "FINALIZADO"
 
     df["curso_key"] = df["curso"].apply(normalizar_texto)
     df["matricula_key"] = df["matricula"].apply(limpiar_id)
     df["correo_key"] = df["correo_docente"].apply(limpiar_correo)
     df["nombre_key"] = df["nombre_normalizado"].apply(normalizar_texto)
 
-    df["finalizado_oficial"] = df["estatus_final"] == "FINALIZADO"
-
     return df
 
 
-def limpiar_ajustes_manuales(ajustes):
-    if ajustes.empty:
-        return pd.DataFrame(columns=[
-            "curso_key",
-            "matricula_key",
-            "correo_key",
-            "tareas_entregadas_manual",
-            "tareas_totales_manual",
-            "avance_pct_manual",
-            "estatus_final_manual",
-            "observaciones_manual",
-        ])
-
-    df = ajustes.copy()
-
-    defaults = {
-        "curso": "",
-        "matricula": "",
-        "correo_docente": "",
-        "nombre_docente": "",
-        "tareas_entregadas_manual": "",
-        "tareas_totales_manual": "",
-        "avance_pct_manual": "",
-        "estatus_final_manual": "",
-        "observaciones_manual": "",
-        "fecha_ajuste": "",
-    }
-
-    for col, default in defaults.items():
-        if col not in df.columns:
-            df[col] = default
-
-    df["curso_key"] = df["curso"].apply(normalizar_texto)
-    df["matricula_key"] = df["matricula"].apply(limpiar_id)
-    df["correo_key"] = df["correo_docente"].apply(limpiar_correo)
-
-    df = df[
-        (df["curso_key"] != "")
-        & ((df["matricula_key"] != "") | (df["correo_key"] != ""))
-    ].copy()
-
-    return df
-
-
-def aplicar_ajustes_manuales(seguimiento, ajustes):
-    df = seguimiento.copy()
-    aj = limpiar_ajustes_manuales(ajustes)
-
-    if aj.empty:
-        df["finalizado_oficial"] = df["estatus_final"] == "FINALIZADO"
-        return df
-
-    mapa_matricula = {}
-    mapa_correo = {}
-
-    for _, row in aj.iterrows():
-        ajuste = {
-            "tareas_entregadas_manual": row.get("tareas_entregadas_manual", ""),
-            "tareas_totales_manual": row.get("tareas_totales_manual", ""),
-            "avance_pct_manual": row.get("avance_pct_manual", ""),
-            "estatus_final_manual": row.get("estatus_final_manual", ""),
-            "observaciones_manual": row.get("observaciones_manual", ""),
-        }
-
-        curso_key = row["curso_key"]
-        matricula_key = row["matricula_key"]
-        correo_key = row["correo_key"]
-
-        if matricula_key:
-            mapa_matricula[(curso_key, matricula_key)] = ajuste
-
-        if correo_key:
-            mapa_correo[(curso_key, correo_key)] = ajuste
-
-    def aplicar(row):
-        curso_key = row.get("curso_key", "")
-        matricula_key = row.get("matricula_key", "")
-        correo_key = row.get("correo_key", "")
-
-        ajuste = None
-
-        if matricula_key:
-            ajuste = mapa_matricula.get((curso_key, matricula_key))
-
-        if ajuste is None and correo_key:
-            ajuste = mapa_correo.get((curso_key, correo_key))
-
-        if ajuste is None:
-            return row
-
-        if normalizar_valor(ajuste.get("tareas_entregadas_manual", "")) != "":
-            row["tareas_entregadas"] = pd.to_numeric(
-                ajuste["tareas_entregadas_manual"], errors="coerce"
-            )
-
-        if normalizar_valor(ajuste.get("tareas_totales_manual", "")) != "":
-            row["tareas_totales"] = pd.to_numeric(
-                ajuste["tareas_totales_manual"], errors="coerce"
-            )
-
-        if normalizar_valor(ajuste.get("avance_pct_manual", "")) != "":
-            row["avance_pct"] = pd.to_numeric(
-                ajuste["avance_pct_manual"], errors="coerce"
-            )
-
-        if normalizar_valor(ajuste.get("estatus_final_manual", "")) != "":
-            row["estatus_final"] = str(ajuste["estatus_final_manual"]).strip().upper()
-
-        if normalizar_valor(ajuste.get("observaciones_manual", "")) != "":
-            row["observaciones"] = str(ajuste["observaciones_manual"]).strip()
-
-        return row
-
-    df = df.apply(aplicar, axis=1)
-
-    df["tareas_entregadas"] = pd.to_numeric(df["tareas_entregadas"], errors="coerce").fillna(0)
-    df["tareas_totales"] = pd.to_numeric(df["tareas_totales"], errors="coerce").fillna(0)
-    df["avance_pct"] = pd.to_numeric(df["avance_pct"], errors="coerce").fillna(0).clip(lower=0, upper=100)
-
-    df["estatus_final"] = (
-        df["estatus_final"]
-        .astype(str)
-        .str.strip()
-        .str.upper()
-        .replace("NAN", "EN_PROCESO")
-        .replace("", "EN_PROCESO")
-    )
-
-    df["finalizado_oficial"] = df["estatus_final"] == "FINALIZADO"
-
-    return df
-
-
+# =====================================================
+# INCORPORAR ÁREA DESDE INSCRIPCIONES_SYNC
+# =====================================================
 def incorporar_area(seguimiento, inscripciones):
+    """
+    INSCRIPCIONES_SYNC tiene: correo_docente, curso_inscrito, area_adscripcion.
+    Se cruza por correo + curso para traer el área a SEGUIMIENTO_ACTUAL.
+    Fallback: solo por correo si no hay coincidencia correo+curso.
+    """
     df = seguimiento.copy()
 
     if inscripciones.empty:
@@ -498,12 +388,14 @@ def incorporar_area(seguimiento, inscripciones):
         .replace("", "SIN ÁREA")
     )
 
+    # Mapa 1: correo + curso → área
     mapa_correo_curso = {}
     for _, row in ins.iterrows():
         key = (row["correo_ins"], normalizar_texto(str(row["curso_ins"])))
         if key not in mapa_correo_curso and row["area_ins"] not in ("SIN ÁREA", ""):
             mapa_correo_curso[key] = row["area_ins"]
 
+    # Mapa 2: solo correo → área (fallback)
     mapa_correo = {}
     for _, row in ins.iterrows():
         key = row["correo_ins"]
@@ -527,6 +419,9 @@ def incorporar_area(seguimiento, inscripciones):
     return df
 
 
+# =====================================================
+# FILTROS Y CÁLCULOS
+# =====================================================
 def filtrar_por_carrera_si_aplica(df, vista, carrera):
     if vista != "Director de carrera" or not carrera:
         return df
@@ -645,6 +540,9 @@ def docentes_top_finalizados(df):
     ]].sort_values(["Cursos finalizados", "% Finalización"], ascending=False).head(15)
 
 
+# =====================================================
+# ESTILOS
+# =====================================================
 def aplicar_estilos():
     st.markdown(
         """
@@ -707,7 +605,7 @@ def mostrar_kpis_generales(kpis):
         kpi_card("Cursos activos", kpis["cursos"], "Cursos detectados", COLOR_GRIS)
 
     with c4:
-        kpi_card("Finalizados", kpis["finalizados"], "Según seguimiento + ajustes manuales", COLOR_VERDE)
+        kpi_card("Finalizados", kpis["finalizados"], "Según SEGUIMIENTO_ACTUAL", COLOR_VERDE)
 
 
 def mostrar_tarjetas_finalizacion_por_curso(tabla_cursos):
@@ -739,6 +637,9 @@ def mostrar_tarjetas_finalizacion_por_curso(tabla_cursos):
                 )
 
 
+# =====================================================
+# GRÁFICAS
+# =====================================================
 def grafica_inscritos_area(df):
     resumen = resumen_por_area(df)
 
@@ -830,6 +731,9 @@ def grafica_proceso_vs_finalizado(df):
     return fig
 
 
+# =====================================================
+# FUNCIÓN PRINCIPAL
+# =====================================================
 def render_capacitacion_docente(vista=None, carrera=None):
     aplicar_estilos()
 
@@ -837,10 +741,9 @@ def render_capacitacion_docente(vista=None, carrera=None):
     st.caption("Seguimiento de docentes inscritos, cursos activos, avance y finalización.")
 
     with st.spinner("Cargando datos de capacitación..."):
-        df_raw, inscripciones_raw, ajustes_raw = cargar_datos()
+        df_raw, inscripciones_raw = cargar_datos()
 
     seguimiento = limpiar_seguimiento(df_raw)
-    seguimiento = aplicar_ajustes_manuales(seguimiento, ajustes_raw)
     df = incorporar_area(seguimiento, inscripciones_raw)
 
     df_permitido = filtrar_por_carrera_si_aplica(df, vista, carrera)
@@ -869,6 +772,9 @@ def render_capacitacion_docente(vista=None, carrera=None):
         key="nav_capacitacion_docente",
     )
 
+    # ==================================================
+    # RESUMEN
+    # ==================================================
     if vista_modulo == "Resumen":
         mostrar_tarjetas_finalizacion_por_curso(tabla_cursos_general)
         st.divider()
@@ -936,6 +842,9 @@ def render_capacitacion_docente(vista=None, carrera=None):
                 },
             )
 
+    # ==================================================
+    # DIRECTOR DE CARRERA
+    # ==================================================
     elif vista_modulo == "Director de Carrera":
         if vista == "Director de carrera" and carrera:
             area_sel = carrera
@@ -1000,6 +909,9 @@ def render_capacitacion_docente(vista=None, carrera=None):
             },
         )
 
+    # ==================================================
+    # POR CURSO
+    # ==================================================
     elif vista_modulo == "Por curso":
         st.subheader("Análisis individual por curso")
 
@@ -1062,6 +974,9 @@ def render_capacitacion_docente(vista=None, carrera=None):
                 },
             )
 
+    # ==================================================
+    # RANKINGS
+    # ==================================================
     elif vista_modulo == "Rankings":
         st.subheader("Rankings destacados")
 
@@ -1100,6 +1015,9 @@ def render_capacitacion_docente(vista=None, carrera=None):
             },
         )
 
+    # ==================================================
+    # DETALLE GENERAL
+    # ==================================================
     elif vista_modulo == "Detalle general":
         st.subheader("Tabla completa con filtros")
 
