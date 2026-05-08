@@ -9,8 +9,10 @@ import re
 # =====================================================
 SHEET_ID = "1Dgu3_UMAYecX-KCxLhHUe_EYiXCF68rvE2XpYwOx9lM"
 
-URL_SEGUIMIENTO = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=519739604"
-URL_CONTROL_DIPLOMAS = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=CONTROL_DIPLOMAS"
+# Hoja principal con estatus ya calculado (FINALIZADO / EN_PROCESO)
+URL_SEGUIMIENTO = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=SEGUIMIENTO_ACTUAL"
+# Hoja con área de adscripción por docente/curso
+URL_INSCRIPCIONES = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=INSCRIPCIONES_SYNC"
 
 COLOR_AZUL = "#2F80ED"
 COLOR_VERDE = "#10B981"
@@ -69,24 +71,26 @@ def normalizar_columnas(df):
 
 @st.cache_data(ttl=300)
 def cargar_datos():
+    # Hoja SEGUIMIENTO_ACTUAL — fuente oficial de estatus
     seguimiento = pd.read_csv(URL_SEGUIMIENTO)
     seguimiento = normalizar_columnas(seguimiento)
 
+    # Hoja INSCRIPCIONES_SYNC — fuente del área de adscripción
     try:
-        diplomas = pd.read_csv(URL_CONTROL_DIPLOMAS)
-        diplomas = normalizar_columnas(diplomas)
+        inscripciones = pd.read_csv(URL_INSCRIPCIONES)
+        inscripciones = normalizar_columnas(inscripciones)
     except Exception:
-        diplomas = pd.DataFrame()
+        inscripciones = pd.DataFrame()
 
-    return seguimiento, diplomas
+    return seguimiento, inscripciones
 
 
 # =====================================================
 # ALIAS
 # =====================================================
 ALIAS_AREA = [
-    "area_de_adscripcion",
     "area_adscripcion",
+    "area_de_adscripcion",
     "adscripcion",
     "area",
     "carrera",
@@ -94,9 +98,9 @@ ALIAS_AREA = [
 ]
 
 ALIAS_NOMBRE = [
-    "nombre_normalizado",
-    "nombre_forms",
     "nombre_seac",
+    "nombre_forms",
+    "nombre_normalizado",
     "nombre",
     "docente",
     "nombre_docente",
@@ -239,14 +243,9 @@ def construir_curso_si_no_existe(df):
 def limpiar_seguimiento(df):
     df = df.copy()
 
-    col_area = detectar_columna(df, ALIAS_AREA)
     col_nombre = detectar_columna(df, ALIAS_NOMBRE)
     col_correo = detectar_columna(df, ALIAS_CORREO)
-    col_estatus = detectar_columna(df, ALIAS_ESTATUS)
     col_avance = detectar_columna(df, ALIAS_AVANCE)
-
-    if col_area and col_area != "area_de_adscripcion":
-        df = df.rename(columns={col_area: "area_de_adscripcion"})
 
     if col_nombre and col_nombre != "nombre_normalizado":
         df = df.rename(columns={col_nombre: "nombre_normalizado"})
@@ -254,18 +253,16 @@ def limpiar_seguimiento(df):
     if col_correo and col_correo != "correo_docente":
         df = df.rename(columns={col_correo: "correo_docente"})
 
-    if col_estatus and col_estatus != "estatus_original":
-        df = df.rename(columns={col_estatus: "estatus_original"})
-
     if col_avance and col_avance != "avance_pct":
         df = df.rename(columns={col_avance: "avance_pct"})
+
+    # estatus_final ya viene con los valores FINALIZADO / EN_PROCESO desde SEGUIMIENTO_ACTUAL
+    # no se renombra ni se sobreescribe
 
     df = construir_curso_si_no_existe(df)
 
     defaults = {
-        "area_de_adscripcion": "SIN ÁREA",
         "curso": "SIN CURSO",
-        "estatus_original": "",
         "nombre_normalizado": "SIN NOMBRE",
         "correo_docente": "",
         "avance_pct": 0,
@@ -276,21 +273,13 @@ def limpiar_seguimiento(df):
         "tipo_correo": "",
         "fecha_ultimo_corte": "",
         "observaciones": "",
+        "estatus_final": "EN_PROCESO",
+        "area_de_adscripcion": "SIN ÁREA",
     }
 
     for col, default in defaults.items():
         if col not in df.columns:
             df[col] = default
-
-    if "tareas" in df.columns:
-        tareas_split = df["tareas"].astype(str).str.extract(r"(\d+)\s*/\s*(\d+)")
-        if tareas_split.notna().any().any():
-            df["tareas_entregadas"] = pd.to_numeric(tareas_split[0], errors="coerce").fillna(
-                df["tareas_entregadas"]
-            )
-            df["tareas_totales"] = pd.to_numeric(tareas_split[1], errors="coerce").fillna(
-                df["tareas_totales"]
-            )
 
     df["tareas_entregadas"] = pd.to_numeric(df["tareas_entregadas"], errors="coerce").fillna(0)
     df["tareas_totales"] = pd.to_numeric(df["tareas_totales"], errors="coerce").fillna(0)
@@ -308,15 +297,6 @@ def limpiar_seguimiento(df):
     )
 
     df["avance_pct"] = df["avance_pct"].clip(lower=0, upper=100)
-
-    df["area_de_adscripcion"] = (
-        df["area_de_adscripcion"]
-        .astype(str)
-        .str.strip()
-        .str.upper()
-        .replace("NAN", "SIN ÁREA")
-        .replace("", "SIN ÁREA")
-    )
 
     df["curso"] = (
         df["curso"]
@@ -343,6 +323,17 @@ def limpiar_seguimiento(df):
 
     df["matricula"] = df["matricula"].apply(limpiar_id)
 
+    # Leer estatus_final directamente de la hoja y derivar finalizado_oficial
+    df["estatus_final"] = (
+        df["estatus_final"]
+        .astype(str)
+        .str.strip()
+        .str.upper()
+        .replace("NAN", "EN_PROCESO")
+        .replace("", "EN_PROCESO")
+    )
+    df["finalizado_oficial"] = df["estatus_final"] == "FINALIZADO"
+
     df["curso_key"] = df["curso"].apply(normalizar_texto)
     df["matricula_key"] = df["matricula"].apply(limpiar_id)
     df["correo_key"] = df["correo_docente"].apply(limpiar_correo)
@@ -352,139 +343,78 @@ def limpiar_seguimiento(df):
 
 
 # =====================================================
-# LIMPIEZA CONTROL_DIPLOMAS
+# INCORPORAR ÁREA DESDE INSCRIPCIONES_SYNC
 # =====================================================
-def limpiar_diplomas(df):
-    if df.empty:
-        return pd.DataFrame(columns=[
-            "matricula_key",
-            "correo_key",
-            "nombre_key",
-            "curso_key",
-            "estatus_final_diploma",
-        ])
-
-    df = df.copy()
-
-    defaults = {
-        "id_curso": "",
-        "nombre_curso": "",
-        "curso_origen": "",
-        "matricula": "",
-        "nombre": "",
-        "correo": "",
-        "estatus_final": "",
-    }
-
-    for col, default in defaults.items():
-        if col not in df.columns:
-            df[col] = default
-
-    df["matricula_key"] = df["matricula"].apply(limpiar_id)
-    df["correo_key"] = df["correo"].apply(limpiar_correo)
-    df["nombre_key"] = df["nombre"].apply(normalizar_texto)
-
-    df["curso_base"] = df["nombre_curso"].astype(str).str.strip()
-
-    mask_sin_nombre_curso = df["curso_base"].isin(["", "nan", "None"])
-    df.loc[mask_sin_nombre_curso, "curso_base"] = df.loc[mask_sin_nombre_curso, "curso_origen"].astype(str).str.strip()
-
-    mask_sin_curso_origen = df["curso_base"].isin(["", "nan", "None"])
-    df.loc[mask_sin_curso_origen, "curso_base"] = df.loc[mask_sin_curso_origen, "id_curso"].astype(str).str.strip()
-
-    df["curso_key"] = df["curso_base"].apply(normalizar_texto)
-    df["estatus_final_diploma"] = df["estatus_final"].astype(str).str.strip()
-    df["estatus_norm_diploma"] = df["estatus_final_diploma"].apply(normalizar_texto)
-
-    # CONTROL_DIPLOMAS es la fuente oficial de finalización.
-    # Aun así, filtramos solo casos donde el estatus no indique error/pendiente/no.
-    est = df["estatus_norm_diploma"]
-
-    es_negativo = est.str.contains(
-        "pendiente|error|rechaz|no_aplica|no_enviar|no_enviado|no_encontrado",
-        case=False,
-        na=False,
-    )
-
-    es_final = est.str.contains(
-        "finaliz|terminad|concluid|completad|aprobado|apto|enviado|si|ok",
-        case=False,
-        na=False,
-    )
-
-    # Si estatus_final está vacío pero existe en CONTROL_DIPLOMAS con matrícula/curso,
-    # también lo consideramos finalizado porque esta hoja es la fuente oficial.
-    estatus_vacio = est.eq("") | est.eq("nan") | est.eq("none")
-
-    df["es_finalizado_diploma"] = (es_final | estatus_vacio) & (~es_negativo)
-
-    df = df[df["es_finalizado_diploma"]].copy()
-
-    return df[[
-        "matricula_key",
-        "correo_key",
-        "nombre_key",
-        "curso_key",
-        "estatus_final_diploma",
-    ]].drop_duplicates()
-
-
-# =====================================================
-# CRUCE SEGUIMIENTO + CONTROL_DIPLOMAS
-# =====================================================
-def aplicar_finalizados_por_diplomas(seguimiento, diplomas):
+def incorporar_area(seguimiento, inscripciones):
+    """
+    INSCRIPCIONES_SYNC tiene: correo_docente, curso_inscrito, area_adscripcion.
+    Se cruza por correo + curso para traer el área a SEGUIMIENTO_ACTUAL.
+    Fallback: solo por correo si no hay coincidencia correo+curso.
+    """
     df = seguimiento.copy()
-    dip = diplomas.copy()
 
-    if dip.empty:
-        df["finalizado_oficial"] = False
-        df["estatus_final"] = "EN_PROCESO"
+    if inscripciones.empty:
+        df["area_de_adscripcion"] = "SIN ÁREA"
         return df
 
-    set_mat_curso = set(
-        zip(
-            dip["matricula_key"].astype(str),
-            dip["curso_key"].astype(str),
-        )
-    )
+    ins = inscripciones.copy()
 
-    set_correo_curso = set(
-        zip(
-            dip["correo_key"].astype(str),
-            dip["curso_key"].astype(str),
-        )
-    )
+    col_area_ins = detectar_columna(ins, ALIAS_AREA)
+    col_correo_ins = detectar_columna(ins, ALIAS_CORREO)
+    col_curso_ins = detectar_columna(ins, ["curso_inscrito", "curso", "taller"])
 
-    set_nombre_curso = set(
-        zip(
-            dip["nombre_key"].astype(str),
-            dip["curso_key"].astype(str),
-        )
-    )
+    if not col_area_ins or not col_correo_ins:
+        df["area_de_adscripcion"] = "SIN ÁREA"
+        return df
 
-    def esta_finalizado(row):
-        matricula_key = str(row.get("matricula_key", ""))
-        correo_key = str(row.get("correo_key", ""))
-        nombre_key = str(row.get("nombre_key", ""))
-        curso_key = str(row.get("curso_key", ""))
-
-        if matricula_key and curso_key and (matricula_key, curso_key) in set_mat_curso:
-            return True
-
-        if correo_key and curso_key and (correo_key, curso_key) in set_correo_curso:
-            return True
-
-        if nombre_key and curso_key and (nombre_key, curso_key) in set_nombre_curso:
-            return True
-
-        return False
-
-    df["finalizado_oficial"] = df.apply(esta_finalizado, axis=1)
-
-    df["estatus_final"] = df["finalizado_oficial"].map({
-        True: "FINALIZADO",
-        False: "EN_PROCESO",
+    ins = ins.rename(columns={
+        col_area_ins: "area_ins",
+        col_correo_ins: "correo_ins",
     })
+
+    if col_curso_ins:
+        ins = ins.rename(columns={col_curso_ins: "curso_ins"})
+        ins["curso_ins"] = ins["curso_ins"].astype(str).str.strip()
+    else:
+        ins["curso_ins"] = ""
+
+    ins["correo_ins"] = ins["correo_ins"].apply(limpiar_correo)
+    ins["area_ins"] = (
+        ins["area_ins"]
+        .astype(str)
+        .str.strip()
+        .str.upper()
+        .replace("NAN", "SIN ÁREA")
+        .replace("", "SIN ÁREA")
+    )
+
+    # Mapa 1: correo + curso → área
+    mapa_correo_curso = {}
+    for _, row in ins.iterrows():
+        key = (row["correo_ins"], normalizar_texto(str(row["curso_ins"])))
+        if key not in mapa_correo_curso and row["area_ins"] not in ("SIN ÁREA", ""):
+            mapa_correo_curso[key] = row["area_ins"]
+
+    # Mapa 2: solo correo → área (fallback)
+    mapa_correo = {}
+    for _, row in ins.iterrows():
+        key = row["correo_ins"]
+        if key not in mapa_correo and row["area_ins"] not in ("SIN ÁREA", ""):
+            mapa_correo[key] = row["area_ins"]
+
+    def obtener_area(row):
+        correo = limpiar_correo(str(row.get("correo_docente", "")))
+        curso_key = normalizar_texto(str(row.get("curso", "")))
+
+        area = mapa_correo_curso.get((correo, curso_key))
+        if area:
+            return area
+        area = mapa_correo.get(correo)
+        if area:
+            return area
+        return "SIN ÁREA"
+
+    df["area_de_adscripcion"] = df.apply(obtener_area, axis=1)
 
     return df
 
@@ -675,7 +605,7 @@ def mostrar_kpis_generales(kpis):
         kpi_card("Cursos activos", kpis["cursos"], "Cursos detectados", COLOR_GRIS)
 
     with c4:
-        kpi_card("Finalizados", kpis["finalizados"], "Según CONTROL_DIPLOMAS", COLOR_VERDE)
+        kpi_card("Finalizados", kpis["finalizados"], "Según SEGUIMIENTO_ACTUAL", COLOR_VERDE)
 
 
 def mostrar_tarjetas_finalizacion_por_curso(tabla_cursos):
@@ -811,12 +741,11 @@ def render_capacitacion_docente(vista=None, carrera=None):
     st.caption("Seguimiento de docentes inscritos, cursos activos, avance y finalización.")
 
     with st.spinner("Cargando datos de capacitación..."):
-        df_raw, diplomas_raw = cargar_datos()
+        df_raw, inscripciones_raw = cargar_datos()
 
     seguimiento = limpiar_seguimiento(df_raw)
-    diplomas = limpiar_diplomas(diplomas_raw)
+    df = incorporar_area(seguimiento, inscripciones_raw)
 
-    df = aplicar_finalizados_por_diplomas(seguimiento, diplomas)
     df_permitido = filtrar_por_carrera_si_aplica(df, vista, carrera)
 
     if df_permitido.empty:
