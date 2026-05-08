@@ -9,12 +9,9 @@ import re
 # =====================================================
 SHEET_ID = "1Dgu3_UMAYecX-KCxLhHUe_EYiXCF68rvE2XpYwOx9lM"
 
-# Hoja principal con estatus ya calculado (FINALIZADO / EN_PROCESO)
-URL_SEGUIMIENTO = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=SEGUIMIENTO_ACTUAL"
-# Hoja con área de adscripción por docente/curso
-URL_INSCRIPCIONES = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=INSCRIPCIONES_SYNC"
-# Hoja con correcciones manuales que sobreescriben SEGUIMIENTO_ACTUAL
-URL_AJUSTES = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=AJUSTES_MANUALES"
+# Hoja única oficial para Streamlit.
+# DASHBOARD ya debe venir cruzada desde Apps Script con SEGUIMIENTO_ACTUAL + AJUSTES_MANUALES.
+URL_DASHBOARD = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=DASHBOARD"
 
 COLOR_AZUL = "#2F80ED"
 COLOR_VERDE = "#10B981"
@@ -73,26 +70,12 @@ def normalizar_columnas(df):
 
 @st.cache_data(ttl=300)
 def cargar_datos():
-    # Hoja SEGUIMIENTO_ACTUAL — fuente oficial de estatus
-    seguimiento = pd.read_csv(URL_SEGUIMIENTO)
-    seguimiento = normalizar_columnas(seguimiento)
-
-    # Hoja INSCRIPCIONES_SYNC — fuente del área de adscripción
-    try:
-        inscripciones = pd.read_csv(URL_INSCRIPCIONES)
-        inscripciones = normalizar_columnas(inscripciones)
-    except Exception:
-        inscripciones = pd.DataFrame()
-
-    # Hoja AJUSTES_MANUALES — correcciones manuales con prioridad sobre SEGUIMIENTO_ACTUAL
-    try:
-        ajustes = pd.read_csv(URL_AJUSTES)
-        ajustes = normalizar_columnas(ajustes)
-    except Exception:
-        ajustes = pd.DataFrame()
-
-
-    return seguimiento, inscripciones, ajustes
+    # Hoja única oficial para el módulo.
+    # No se leen SEGUIMIENTO_ACTUAL, INSCRIPCIONES_SYNC ni AJUSTES_MANUALES desde Streamlit.
+    # La hoja DASHBOARD ya debe contener la información final correcta.
+    dashboard = pd.read_csv(URL_DASHBOARD)
+    dashboard = normalizar_columnas(dashboard)
+    return dashboard
 
 
 # =====================================================
@@ -266,7 +249,7 @@ def limpiar_seguimiento(df):
     if col_avance and col_avance != "avance_pct":
         df = df.rename(columns={col_avance: "avance_pct"})
 
-    # estatus_final ya viene con los valores FINALIZADO / EN_PROCESO desde SEGUIMIENTO_ACTUAL
+    # estatus_final ya viene con los valores FINALIZADO / EN_PROCESO desde DASHBOARD
     # no se renombra ni se sobreescribe
 
     df = construir_curso_si_no_existe(df)
@@ -357,7 +340,7 @@ def limpiar_seguimiento(df):
 # =====================================================
 def aplicar_ajustes_manuales(df, ajustes):
     """
-    Sobreescribe campos en SEGUIMIENTO_ACTUAL con los valores de AJUSTES_MANUALES.
+    Sobreescribe campos en el dataframe base con los valores de AJUSTES_MANUALES.
     Llave de cruce: correo_docente + curso (prioridad), luego matricula + curso.
     Campos que sobreescribe: tareas_entregadas, tareas_totales, avance_pct,
     estatus_final, observaciones.
@@ -447,7 +430,7 @@ def aplicar_ajustes_manuales(df, ajustes):
 def incorporar_area(seguimiento, inscripciones):
     """
     INSCRIPCIONES_SYNC tiene: correo_docente, curso_inscrito, area_adscripcion.
-    Se cruza por correo + curso para traer el área a SEGUIMIENTO_ACTUAL.
+    Se cruza por correo + curso para traer el área al dataframe base.
     Fallback: solo por correo si no hay coincidencia correo+curso.
     """
     df = seguimiento.copy()
@@ -704,7 +687,7 @@ def mostrar_kpis_generales(kpis):
         kpi_card("Cursos activos", kpis["cursos"], "Cursos detectados", COLOR_GRIS)
 
     with c4:
-        kpi_card("Finalizados", kpis["finalizados"], "Según SEGUIMIENTO_ACTUAL", COLOR_VERDE)
+        kpi_card("Finalizados", kpis["finalizados"], "Según DASHBOARD", COLOR_VERDE)
 
 
 def mostrar_tarjetas_finalizacion_por_curso(tabla_cursos):
@@ -839,12 +822,12 @@ def render_capacitacion_docente(vista=None, carrera=None):
     st.title("Capacitación Docente")
     st.caption("Seguimiento de docentes inscritos, cursos activos, avance y finalización.")
 
-    with st.spinner("Cargando datos de capacitación..."):
-        df_raw, inscripciones_raw, ajustes_raw = cargar_datos()
+    with st.spinner("Cargando datos de capacitación desde DASHBOARD..."):
+        df_raw = cargar_datos()
 
-    seguimiento = limpiar_seguimiento(df_raw)
-    seguimiento = aplicar_ajustes_manuales(seguimiento, ajustes_raw)
-    df = incorporar_area(seguimiento, inscripciones_raw)
+    # DASHBOARD es la fuente única: ya incluye SEGUIMIENTO_ACTUAL + AJUSTES_MANUALES.
+    # Por eso aquí solo se limpia/normaliza para visualización.
+    df = limpiar_seguimiento(df_raw)
 
     df_permitido = filtrar_por_carrera_si_aplica(df, vista, carrera)
 
