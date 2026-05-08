@@ -4,9 +4,6 @@ import plotly.express as px
 import unicodedata
 import re
 
-# =====================================================
-# CONFIG
-# =====================================================
 SHEET_ID = "1Cl0QQxh0Ls5EqCwzowVVV2bCscok9kXR0m_HdyoEiRw"
 
 URL_SEGUIMIENTO = (
@@ -29,13 +26,9 @@ COLOR_MAP_SIMPLE = {
 }
 
 
-# =====================================================
-# UTILIDADES
-# =====================================================
 def normalizar_texto(texto):
     if not isinstance(texto, str):
         return ""
-
     texto = unicodedata.normalize("NFD", texto)
     texto = "".join(c for c in texto if unicodedata.category(c) != "Mn")
     texto = texto.lower().strip()
@@ -47,19 +40,15 @@ def normalizar_texto(texto):
 def limpiar_id(texto):
     if pd.isna(texto):
         return ""
-
     texto = str(texto).strip()
-
     if texto.endswith(".0"):
         texto = texto.replace(".0", "")
-
     return texto.lower()
 
 
 def limpiar_correo(texto):
     if pd.isna(texto):
         return ""
-
     return str(texto).strip().lower()
 
 
@@ -69,7 +58,7 @@ def normalizar_columnas(df):
     return df
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=60)
 def cargar_datos():
     seguimiento = pd.read_csv(URL_SEGUIMIENTO)
     seguimiento = normalizar_columnas(seguimiento)
@@ -83,9 +72,6 @@ def cargar_datos():
     return seguimiento, diplomas
 
 
-# =====================================================
-# ALIAS
-# =====================================================
 ALIAS_AREA = [
     "area_de_adscripcion",
     "area_adscripcion",
@@ -137,9 +123,6 @@ def detectar_columna(df, aliases):
     return None
 
 
-# =====================================================
-# LIMPIEZA SEGUIMIENTO
-# =====================================================
 def limpiar_seguimiento(df):
     df = df.copy()
 
@@ -236,9 +219,6 @@ def limpiar_seguimiento(df):
     return df
 
 
-# =====================================================
-# LIMPIEZA CONTROL_DIPLOMAS
-# =====================================================
 def limpiar_diplomas(df):
     if df.empty:
         return pd.DataFrame(columns=[
@@ -269,7 +249,6 @@ def limpiar_diplomas(df):
     df["estatus_final_diploma"] = df["estatus_final"].astype(str).str.strip()
     df["estatus_norm_diploma"] = df["estatus_final_diploma"].apply(normalizar_texto)
 
-    # Solo cuenta como finalizado si CONTROL_DIPLOMAS dice FINALIZADO
     df = df[
         df["estatus_norm_diploma"].str.contains("finaliz", case=False, na=False)
     ].copy()
@@ -278,7 +257,6 @@ def limpiar_diplomas(df):
     df["correo_key"] = df["correo"].apply(limpiar_correo)
     df["nombre_key"] = df["nombre"].apply(normalizar_texto)
 
-    # En CONTROL_DIPLOMAS el curso correcto viene en la columna "curso"
     df["curso_base"] = df["curso"].astype(str).str.strip()
 
     mask = df["curso_base"].isin(["", "nan", "None"])
@@ -301,18 +279,16 @@ def limpiar_diplomas(df):
     ]].drop_duplicates()
 
 
-# =====================================================
-# CRUCE SEGUIMIENTO + CONTROL_DIPLOMAS
-# =====================================================
 def aplicar_finalizados_por_diplomas(seguimiento, diplomas):
     df = seguimiento.copy()
     dip = diplomas.copy()
 
+    df["finalizado_por_seguimiento"] = (
+        df["estatus_original_norm"].str.contains("finaliz", case=False, na=False)
+    )
+
     if dip.empty:
-        df["finalizado_oficial"] = (
-            df["estatus_original_norm"].str.contains("finaliz", case=False, na=False)
-            | (df["avance_pct"] >= 100)
-        )
+        df["finalizado_por_diploma"] = False
     else:
         set_mat_curso = set(zip(
             dip["matricula_key"].astype(str),
@@ -348,22 +324,9 @@ def aplicar_finalizados_por_diplomas(seguimiento, diplomas):
 
         df["finalizado_por_diploma"] = df.apply(esta_en_control_diplomas, axis=1)
 
-        df["finalizado_por_seguimiento"] = (
-            df["estatus_original_norm"].str.contains("finaliz", case=False, na=False)
-            | (df["avance_pct"] >= 100)
-            | (
-                (df["tareas_totales"] > 0)
-                & (df["tareas_entregadas"] >= df["tareas_totales"])
-            )
-        )
-
-        # Regla final:
-        # Finalizado si coincide en CONTROL_DIPLOMAS por docente + curso
-        # O si SEGUIMIENTO_ACTUAL ya lo marca como FINALIZADO / 100%.
-        df["finalizado_oficial"] = (
-            df["finalizado_por_diploma"]
-            | df["finalizado_por_seguimiento"]
-        )
+    df["finalizado_oficial"] = (
+        df["finalizado_por_seguimiento"] | df["finalizado_por_diploma"]
+    )
 
     df["estatus_final"] = df["finalizado_oficial"].map({
         True: "FINALIZADO",
@@ -373,9 +336,6 @@ def aplicar_finalizados_por_diplomas(seguimiento, diplomas):
     return df
 
 
-# =====================================================
-# FILTROS Y CÁLCULOS
-# =====================================================
 def filtrar_por_carrera_si_aplica(df, vista, carrera):
     if vista != "Director de carrera" or not carrera:
         return df
@@ -511,9 +471,6 @@ def docentes_top_finalizados(df):
     ).head(15)
 
 
-# =====================================================
-# ESTILOS
-# =====================================================
 def aplicar_estilos():
     st.markdown(
         """
@@ -594,7 +551,7 @@ def mostrar_kpis_generales(kpis):
         kpi_card(
             "Finalizados",
             kpis["finalizados"],
-            "Según seguimiento y CONTROL_DIPLOMAS",
+            "Con estatus FINALIZADO",
             COLOR_VERDE,
         )
 
@@ -623,9 +580,6 @@ def mostrar_tarjetas_finalizacion_por_curso(tabla_cursos):
                 )
 
 
-# =====================================================
-# GRÁFICAS
-# =====================================================
 def grafica_inscritos_area(df):
     resumen = resumen_por_area(df)
 
@@ -717,9 +671,6 @@ def grafica_proceso_vs_finalizado(df):
     return fig
 
 
-# =====================================================
-# FUNCIÓN PRINCIPAL
-# =====================================================
 def render_capacitacion_docente(vista=None, carrera=None):
     aplicar_estilos()
 
