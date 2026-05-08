@@ -13,6 +13,8 @@ SHEET_ID = "1Dgu3_UMAYecX-KCxLhHUe_EYiXCF68rvE2XpYwOx9lM"
 URL_SEGUIMIENTO = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=SEGUIMIENTO_ACTUAL"
 # Hoja con área de adscripción por docente/curso
 URL_INSCRIPCIONES = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=INSCRIPCIONES_SYNC"
+# Hoja con correcciones manuales que sobreescriben SEGUIMIENTO_ACTUAL
+URL_AJUSTES = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=AJUSTES_MANUALES"
 
 COLOR_AZUL = "#2F80ED"
 COLOR_VERDE = "#10B981"
@@ -82,7 +84,15 @@ def cargar_datos():
     except Exception:
         inscripciones = pd.DataFrame()
 
-    return seguimiento, inscripciones
+    # Hoja AJUSTES_MANUALES — correcciones manuales con prioridad sobre SEGUIMIENTO_ACTUAL
+    try:
+        ajustes = pd.read_csv(URL_AJUSTES)
+        ajustes = normalizar_columnas(ajustes)
+    except Exception:
+        ajustes = pd.DataFrame()
+
+
+    return seguimiento, inscripciones, ajustes
 
 
 # =====================================================
@@ -340,6 +350,95 @@ def limpiar_seguimiento(df):
     df["nombre_key"] = df["nombre_normalizado"].apply(normalizar_texto)
 
     return df
+
+
+# =====================================================
+# APLICAR AJUSTES MANUALES
+# =====================================================
+def aplicar_ajustes_manuales(df, ajustes):
+    """
+    Sobreescribe campos en SEGUIMIENTO_ACTUAL con los valores de AJUSTES_MANUALES.
+    Llave de cruce: correo_docente + curso (prioridad), luego matricula + curso.
+    Campos que sobreescribe: tareas_entregadas, tareas_totales, avance_pct,
+    estatus_final, observaciones.
+    """
+    if ajustes.empty:
+        return df
+
+    aj = ajustes.copy()
+
+    # Preparar claves de ajuste
+    aj["_correo_key"] = aj["correo_docente"].apply(limpiar_correo) if "correo_docente" in aj.columns else ""
+    aj["_matricula_key"] = aj["matricula"].apply(limpiar_id) if "matricula" in aj.columns else ""
+    aj["_curso_key"] = aj["curso"].apply(normalizar_texto) if "curso" in aj.columns else ""
+
+    # Convertir campos numéricos
+    for campo in ["tareas_entregadas_manual", "tareas_totales_manual", "avance_pct_manual"]:
+        if campo in aj.columns:
+            aj[campo] = pd.to_numeric(aj[campo], errors="coerce")
+
+    if "estatus_final_manual" in aj.columns:
+        aj["estatus_final_manual"] = aj["estatus_final_manual"].astype(str).str.strip().str.upper()
+
+    if "observaciones_manual" in aj.columns:
+        aj["observaciones_manual"] = aj["observaciones_manual"].astype(str).str.strip().replace("nan", "")
+
+    # Construir mapas de ajuste: clave -> dict de campos a sobreescribir
+    mapa_correo_curso = {}
+    mapa_matricula_curso = {}
+
+    for _, row in aj.iterrows():
+        campos = {}
+        if "tareas_entregadas_manual" in row and pd.notna(row["tareas_entregadas_manual"]):
+            campos["tareas_entregadas"] = float(row["tareas_entregadas_manual"])
+        if "tareas_totales_manual" in row and pd.notna(row["tareas_totales_manual"]):
+            campos["tareas_totales"] = float(row["tareas_totales_manual"])
+        if "avance_pct_manual" in row and pd.notna(row["avance_pct_manual"]):
+            campos["avance_pct"] = float(row["avance_pct_manual"])
+        estatus_m = str(row.get("estatus_final_manual", "")).strip()
+        if estatus_m and estatus_m not in ("", "NAN", "NAN"):
+            campos["estatus_final"] = estatus_m
+        obs_m = str(row.get("observaciones_manual", "")).strip()
+        if obs_m and obs_m not in ("", "nan"):
+            campos["observaciones"] = obs_m
+
+        if not campos:
+            continue
+
+        correo = str(row.get("_correo_key", "")).strip()
+        matricula = str(row.get("_matricula_key", "")).strip()
+        curso_key = str(row.get("_curso_key", "")).strip()
+
+        if correo and curso_key:
+            mapa_correo_curso[(correo, curso_key)] = campos
+        if matricula and curso_key:
+            mapa_matricula_curso[(matricula, curso_key)] = campos
+
+    # Aplicar ajustes fila por fila
+    df = df.copy()
+    for idx, row in df.iterrows():
+        correo = limpiar_correo(str(row.get("correo_docente", "")))
+        matricula = limpiar_id(str(row.get("matricula", "")))
+        curso_key = normalizar_texto(str(row.get("curso", "")))
+
+        ajuste = mapa_correo_curso.get((correo, curso_key))
+        if not ajuste:
+            ajuste = mapa_matricula_curso.get((matricula, curso_key))
+
+        if ajuste:
+            for campo, valor in ajuste.items():
+                df.at[idx, campo] = valor
+
+    # Re-normalizar avance y recalcular finalizado_oficial tras ajustes
+    df["avance_pct"] = pd.to_numeric(df["avance_pct"], errors="coerce").fillna(0).clip(0, 100)
+    df["estatus_final"] = (
+        df["estatus_final"].astype(str).str.strip().str.upper()
+        .replace("NAN", "EN_PROCESO").replace("", "EN_PROCESO")
+    )
+    df["finalizado_oficial"] = df["estatus_final"] == "FINALIZADO"
+
+    return df
+
 
 
 # =====================================================
@@ -741,9 +840,10 @@ def render_capacitacion_docente(vista=None, carrera=None):
     st.caption("Seguimiento de docentes inscritos, cursos activos, avance y finalización.")
 
     with st.spinner("Cargando datos de capacitación..."):
-        df_raw, inscripciones_raw = cargar_datos()
+        df_raw, inscripciones_raw, ajustes_raw = cargar_datos()
 
     seguimiento = limpiar_seguimiento(df_raw)
+    seguimiento = aplicar_ajustes_manuales(seguimiento, ajustes_raw)
     df = incorporar_area(seguimiento, inscripciones_raw)
 
     df_permitido = filtrar_por_carrera_si_aplica(df, vista, carrera)
