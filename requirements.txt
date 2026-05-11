@@ -1,10 +1,11 @@
 streamlit
-Authlib
+authlib
+httpx
 pandas
 gspread
 google-auth
+google-auth-oauthlib
 altair
 openpyxl
 xlsxwriter
 plotly
-httpx
