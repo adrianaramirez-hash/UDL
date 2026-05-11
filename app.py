@@ -13,9 +13,8 @@ import indice_reprobacion
 import evaluacion_docente
 from examenes_departamentales import render_examenes_departamentales
 
-
 # ============================================================
-# IMPORTS DEFENSIVOS DE MÓDULOS
+# IMPORTS DEFENSIVOS
 # ============================================================
 try:
     import capacitacion_docente
@@ -49,7 +48,7 @@ except Exception:
 
 
 # ============================================================
-# CONFIG STREAMLIT
+# CONFIG
 # ============================================================
 st.set_page_config(
     page_title="Dirección Académica",
@@ -61,7 +60,7 @@ DEBUG = False
 
 
 # ============================================================
-# CONFIG ACCESOS
+# ACCESOS
 # ============================================================
 ACCESOS_SHEET_URL = "https://docs.google.com/spreadsheets/d/1CK7nphUH9YS2JqSWRhrgamYoQdgJCsn5tERA-WnwXes/edit?gid=770892546#gid=770892546"
 ACCESOS_GID = 770892546
@@ -74,7 +73,7 @@ SCOPES = [
 
 
 # ============================================================
-# MÓDULOS Y CLAVES DE PERMISO
+# MÓDULOS
 # ============================================================
 MOD_KEY_BY_SECCION = {
     "Encuesta de calidad": "encuesta_calidad",
@@ -87,7 +86,6 @@ MOD_KEY_BY_SECCION = {
     "Bajas / Retención": "bajas_retencion",
     "Seguimiento de Inscripciones": "seguimiento_inscripciones",
 }
-
 
 SECCIONES_TODAS = [
     "Encuesta de calidad",
@@ -103,7 +101,7 @@ SECCIONES_TODAS = [
 
 
 # ============================================================
-# HELPERS GENERALES
+# HELPERS
 # ============================================================
 def _extract_sheet_id(url: str) -> str:
     m = re.search(r"/d/([a-zA-Z0-9-_]+)", url or "")
@@ -250,25 +248,14 @@ def _logout_and_clear():
         "user_modulos",
         "user_allow_all",
         "carrera_seleccionada_dc",
-        "seccion_forzada",
     ]:
         st.session_state.pop(k, None)
 
     st.rerun()
 
 
-def _is_modulo_visible(mod_key: str) -> bool:
-    permitted = st.session_state.get("user_modulos", set())
-    allow_all = st.session_state.get("user_allow_all", False)
-
-    if allow_all:
-        return True
-
-    return mod_key in permitted
-
-
 # ============================================================
-# CLIENTE GSPREAD
+# GSPREAD
 # ============================================================
 @st.cache_resource(show_spinner=False)
 def get_gspread_client():
@@ -278,7 +265,7 @@ def get_gspread_client():
 
 
 # ============================================================
-# CARGA DE ACCESOS
+# CARGAR ACCESOS
 # ============================================================
 @st.cache_data(ttl=120, show_spinner=False)
 def cargar_accesos_df() -> tuple[pd.DataFrame, str]:
@@ -308,7 +295,7 @@ def cargar_accesos_df() -> tuple[pd.DataFrame, str]:
 
     values = ws.get_all_values()
 
-    if not values:
+    if not values or len(values) < 1:
         return pd.DataFrame(
             columns=["EMAIL", "ROL", "SERVICIO_ASIGNADO", "ACTIVO", "MODULOS"]
         ), sa_email
@@ -454,7 +441,7 @@ if not is_logged_in:
 
 
 # ============================================================
-# VALIDACIÓN CONTRA HOJA ACCESOS
+# VALIDACIÓN DE PERMISOS
 # ============================================================
 if "user_rol" not in st.session_state:
     user_email = _get_logged_in_email()
@@ -482,7 +469,7 @@ if "user_rol" not in st.session_state:
         st.session_state.pop("carrera_seleccionada_dc", None)
 
     except Exception:
-        st.error("No fue posible validar el acceso en la hoja ACCESOS.")
+        st.error("No fue posible validar el acceso en ACCESOS. Revisa permisos del Google Sheet.")
 
         try:
             sa_email = _load_creds_dict().get("client_email", "")
@@ -492,7 +479,7 @@ if "user_rol" not in st.session_state:
         if sa_email:
             st.info(f"Comparte el Sheet de ACCESOS con este correo como lector: {sa_email}")
 
-        _show_traceback_expander("Ver error técnico de validación")
+        _show_traceback_expander("Ver detalle técnico")
         st.stop()
 
 
@@ -513,7 +500,7 @@ else:
 
 
 # ============================================================
-# SIDEBAR
+# MENÚ
 # ============================================================
 with st.sidebar:
     st.markdown("### Navegación")
@@ -583,22 +570,16 @@ with st.sidebar:
 # ============================================================
 # BLOQUEO DURO POR MÓDULO
 # ============================================================
-try:
-    key = MOD_KEY_BY_SECCION.get(seccion, "")
+key = MOD_KEY_BY_SECCION.get(seccion, "")
 
-    if not key:
-        st.error("Sección inválida.")
-        st.stop()
-
-    if not st.session_state.get("user_allow_all", False):
-        if key not in st.session_state.get("user_modulos", set()):
-            st.error("Sin acceso a este módulo.")
-            st.stop()
-
-except Exception:
-    st.error("Error validando permisos del módulo.")
-    _show_traceback_expander()
+if not key:
+    st.error("Sección inválida.")
     st.stop()
+
+if not st.session_state.get("user_allow_all", False):
+    if key not in st.session_state.get("user_modulos", set()):
+        st.error("Sin acceso a este módulo.")
+        st.stop()
 
 
 # ============================================================
@@ -636,7 +617,7 @@ try:
     elif seccion == "Capacitación Docente":
 
         if not HAS_CAPACITACION_MOD:
-            st.error("❌ No se pudo importar el módulo de Capacitación Docente.")
+            st.error("❌ No se pudo importar el módulo")
 
             with st.expander("Ver error real"):
                 st.exception(ERROR_CAP)
@@ -652,8 +633,7 @@ try:
                 capacitacion_docente.mostrar_modulo_capacitacion_docente()
 
             else:
-                st.error("❌ El archivo capacitacion_docente.py no tiene una función válida.")
-                st.caption("Debe tener `render_capacitacion_docente(vista, carrera)` o `mostrar_modulo_capacitacion_docente()`.")
+                st.error("❌ El archivo no tiene función válida")
 
     elif seccion == "Índice de reprobación":
         indice_reprobacion.render_indice_reprobacion(
@@ -675,28 +655,22 @@ try:
         )
 
     elif seccion == "Bajas / Retención":
-        if HAS_BAJAS_MOD and hasattr(bajas_retencion, "render_bajas_retencion"):
+        if HAS_BAJAS_MOD:
             bajas_retencion.render_bajas_retencion(
                 vista=vista,
                 carrera=carrera
             )
         else:
-            st.warning("Módulo Bajas / Retención no disponible.")
+            st.warning("Módulo no disponible")
 
     elif seccion == "Seguimiento de Inscripciones":
-        if HAS_SEGUIMIENTO_INS_MOD and hasattr(seguimiento_inscripciones, "render_seguimiento_inscripciones"):
+        if HAS_SEGUIMIENTO_INS_MOD:
             seguimiento_inscripciones.render_seguimiento_inscripciones(
                 vista=vista,
                 carrera=carrera
             )
         else:
-            st.warning("Módulo Seguimiento de Inscripciones no disponible.")
-
-    else:
-        st.subheader("Panel inicial")
-        st.write(f"Rol: **{ROL}**")
-        st.write(f"Vista actual: **{vista}**")
-        st.write(f"Módulo seleccionado: **{seccion}**")
+            st.warning("Módulo no disponible")
 
 except Exception:
     st.error("Ocurrió un error al cargar el módulo seleccionado.")
