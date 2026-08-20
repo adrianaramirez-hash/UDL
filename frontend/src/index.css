@@ -1,0 +1,300 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  /* =========================================================
+     TIPOGRAFÍA SIA
+     ========================================================= */
+  --font-sans: "Geist Variable", system-ui, sans-serif;
+  --font-heading: Georgia, Cambria, "Times New Roman", serif;
+  --font-serif: Georgia, Cambria, "Times New Roman", serif;
+
+  /* =========================================================
+     COLORES SHADCN
+     ========================================================= */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* =========================================================
+     GRÁFICAS SIA
+     ========================================================= */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* =========================================================
+     SIDEBAR
+     ========================================================= */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* =========================================================
+     RADIOS
+     ========================================================= */
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* ===========================================================
+   SIA — LIGHT THEME
+   =========================================================== */
+
+:root {
+  /* Fondo marfil institucional */
+  --background: #fbfaf7;
+  --foreground: #17212b;
+
+  --card: #ffffff;
+  --card-foreground: #17212b;
+
+  --popover: #ffffff;
+  --popover-foreground: #17212b;
+
+  /* Azul petróleo SIA */
+  --primary: #075f73;
+  --primary-foreground: #ffffff;
+
+  --secondary: #eef5f6;
+  --secondary-foreground: #075f73;
+
+  --muted: #f4f5f4;
+  --muted-foreground: #687583;
+
+  --accent: #dceff4;
+  --accent-foreground: #075f73;
+
+  --destructive: #dc3f48;
+
+  --border: #d8e1e5;
+  --input: #d8e1e5;
+  --ring: #76aebb;
+
+  --radius: 0.75rem;
+
+  /* Gráficas */
+  --chart-1: #075f73;
+  --chart-2: #75b5c3;
+  --chart-3: #b8dce3;
+  --chart-4: #d8a14d;
+  --chart-5: #dc5d62;
+
+  /* Sidebar */
+  --sidebar: #fdfcf9;
+  --sidebar-foreground: #344452;
+  --sidebar-primary: #075f73;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #dceff4;
+  --sidebar-accent-foreground: #075f73;
+  --sidebar-border: #dde5e8;
+  --sidebar-ring: #76aebb;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ===========================================================
+   DARK THEME — preparado para futuro
+   =========================================================== */
+
+.dark {
+  --background: #10191d;
+  --foreground: #f4f6f7;
+
+  --card: #162328;
+  --card-foreground: #f4f6f7;
+
+  --popover: #162328;
+  --popover-foreground: #f4f6f7;
+
+  --primary: #8bc4cf;
+  --primary-foreground: #0d3038;
+
+  --secondary: #203238;
+  --secondary-foreground: #edf7f8;
+
+  --muted: #203036;
+  --muted-foreground: #a2b0b5;
+
+  --accent: #193b44;
+  --accent-foreground: #b9e0e7;
+
+  --destructive: #ef6b70;
+
+  --border: rgb(255 255 255 / 10%);
+  --input: rgb(255 255 255 / 12%);
+  --ring: #76aebb;
+
+  --chart-1: #8bc4cf;
+  --chart-2: #5a9dac;
+  --chart-3: #d0a25b;
+  --chart-4: #82b58f;
+  --chart-5: #e0787d;
+
+  --sidebar: #122025;
+  --sidebar-foreground: #edf3f4;
+  --sidebar-primary: #8bc4cf;
+  --sidebar-primary-foreground: #102d34;
+  --sidebar-accent: #1b343b;
+  --sidebar-accent-foreground: #dff4f7;
+  --sidebar-border: rgb(255 255 255 / 10%);
+  --sidebar-ring: #76aebb;
+}
+
+/* ===========================================================
+   BASE GLOBAL
+   =========================================================== */
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    box-sizing: border-box;
+  }
+
+  html {
+    @apply font-sans;
+    background: var(--background);
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  button,
+  a {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  ::selection {
+    background: #cce5ea;
+    color: #073f4c;
+  }
+}
+
+/* ===========================================================
+   SIA — UTILIDADES VISUALES
+   =========================================================== */
+
+@layer utilities {
+  .sia-heading {
+    font-family: var(--font-heading);
+    font-weight: 400;
+    letter-spacing: -0.035em;
+  }
+
+  .sia-eyebrow {
+    color: #075f73;
+    font-size: 0.66rem;
+    font-weight: 650;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+
+  .sia-card {
+    border: 1px solid #c9dce1;
+    border-radius: 0.9rem;
+    background: #ffffff;
+    box-shadow:
+      0 1px 2px rgb(17 24 39 / 4%),
+      0 3px 8px rgb(17 24 39 / 3%);
+  }
+
+  .sia-card-interactive {
+    transition:
+      border-color 160ms ease,
+      box-shadow 160ms ease,
+      transform 160ms ease;
+  }
+
+  .sia-card-interactive:hover {
+    border-color: #9fc4cd;
+    box-shadow:
+      0 2px 4px rgb(17 24 39 / 5%),
+      0 8px 22px rgb(17 24 39 / 6%);
+    transform: translateY(-1px);
+  }
+}
+
+/* ===========================================================
+   SCROLLBAR DISCRETA
+   =========================================================== */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #bdcbd0 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #bdcbd0;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #9cafb6;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}

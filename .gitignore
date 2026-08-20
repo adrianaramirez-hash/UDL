@@ -1,0 +1,29 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Credenciales y secretos
+credentials/
+.env
+.env.*
+debug_secrets.py
+
+# Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# Logs y temporales
+*.log
+
+# Repositorio anterior
+legacy/UDL/
+
+# Streamlit secrets
+.streamlit/secrets.toml
+
+# Streamlit secrets
+.streamlit/secrets.toml
