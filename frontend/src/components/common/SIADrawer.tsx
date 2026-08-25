@@ -1,4 +1,5 @@
-import { ReactNode, useEffect } from "react"
+﻿import { useEffect } from "react"
+import type { ReactNode } from "react"
 
 type SIADrawerProps = {
   open: boolean
@@ -74,7 +75,7 @@ export function SIADrawer({
               onClick={onClose}
               className="rounded-lg p-2 transition hover:bg-muted"
             >
-              ✕
+              âœ•
             </button>
 
           </div>
@@ -88,3 +89,4 @@ export function SIADrawer({
     </div>
   )
 }
+
