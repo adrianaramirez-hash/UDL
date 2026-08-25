@@ -68,3 +68,62 @@ def obtener_ultima_fila_con_datos(
             return indice + 1
 
     return 0
+
+
+def _columna_a_numero(columna: str) -> int:
+    """
+    Convierte una letra de columna de Google Sheets
+    a su número: A=1, Z=26, AA=27...
+    """
+    resultado = 0
+
+    for caracter in columna.strip().upper():
+        resultado = (
+            resultado * 26
+            + ord(caracter)
+            - ord("A")
+            + 1
+        )
+
+    return resultado
+
+
+def leer_filas(
+    spreadsheet_id: str,
+    hoja: str,
+    fila_inicio: int,
+    fila_fin: int,
+    columna_fin: str,
+) -> list[list]:
+    """
+    Lee un bloque exacto de filas desde la columna A
+    hasta columna_fin.
+
+    No modifica ningún dato.
+    """
+    if fila_fin < fila_inicio:
+        return []
+
+    client = crear_cliente_google_sheets()
+    spreadsheet = client.open_by_key(spreadsheet_id)
+    worksheet = spreadsheet.worksheet(hoja)
+
+    rango = (
+        f"A{fila_inicio}:"
+        f"{columna_fin.strip().upper()}{fila_fin}"
+    )
+
+    filas = worksheet.get(rango)
+
+    ancho = _columna_a_numero(
+        columna_fin
+    )
+
+    return [
+        list(fila)
+        + [""] * max(
+            0,
+            ancho - len(fila),
+        )
+        for fila in filas
+    ]
