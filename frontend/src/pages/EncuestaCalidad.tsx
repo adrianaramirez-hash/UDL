@@ -16,6 +16,36 @@ import {
   type CalidadSummary,
 } from "@/services/calidadService"
 
+function getNivel(indice: number | null) {
+  if (indice === null) return "Sin datos"
+  if (indice <= 60) return "Crítico"
+  if (indice <= 75) return "Atención"
+  if (indice <= 85) return "Adecuado"
+  return "Fortaleza"
+}
+
+function getNivelClasses(indice: number | null) {
+  const nivel = getNivel(indice)
+
+  if (nivel === "Crítico") {
+    return "border-red-200 bg-red-50 text-red-700"
+  }
+
+  if (nivel === "Atención") {
+    return "border-amber-200 bg-amber-50 text-amber-700"
+  }
+
+  if (nivel === "Adecuado") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700"
+  }
+
+  if (nivel === "Fortaleza") {
+    return "border-emerald-300 bg-emerald-100 text-emerald-800"
+  }
+
+  return "border-slate-200 bg-slate-50 text-slate-600"
+}
+
 export default function EncuestaCalidad() {
   const [summary, setSummary] = useState<CalidadSummary | null>(null)
   const [loading, setLoading] = useState(true)
@@ -118,9 +148,15 @@ export default function EncuestaCalidad() {
                     {summary.indice_general?.toFixed(2) ?? "—"}
                   </p>
 
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Escala institucional 0–100
-                  </p>
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <p className="text-xs text-muted-foreground">
+                      Escala institucional 0–100
+                    </p>
+
+                    <span className={`rounded-full border px-3 py-1 text-xs font-medium ${getNivelClasses(summary.indice_general)}`}>
+                      {getNivel(summary.indice_general)}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="rounded-2xl border bg-card p-6 shadow-sm">
@@ -230,3 +266,5 @@ export default function EncuestaCalidad() {
     </div>
   )
 }
+
+
