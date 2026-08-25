@@ -43,3 +43,28 @@ def leer_encabezados(
     worksheet = spreadsheet.worksheet(hoja)
 
     return worksheet.row_values(1)
+
+
+def obtener_ultima_fila_con_datos(
+    spreadsheet_id: str,
+    hoja: str,
+) -> int:
+    """
+    Devuelve la última fila que contiene un valor
+    en la columna A.
+    """
+    client = crear_cliente_google_sheets()
+    spreadsheet = client.open_by_key(spreadsheet_id)
+    worksheet = spreadsheet.worksheet(hoja)
+
+    valores = worksheet.col_values(1)
+
+    for indice in range(
+        len(valores) - 1,
+        -1,
+        -1,
+    ):
+        if str(valores[indice]).strip():
+            return indice + 1
+
+    return 0
