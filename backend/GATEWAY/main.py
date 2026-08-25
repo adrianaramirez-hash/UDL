@@ -5,6 +5,10 @@ from backend.GATEWAY.observation_api import (
     router as observation_router,
 )
 
+from backend.GATEWAY.calidad_api import (
+    router as calidad_router,
+)
+
 
 app = FastAPI(
     title="SIA Intelligence API",
@@ -39,6 +43,10 @@ app.add_middleware(
 
 app.include_router(
     observation_router
+)
+
+app.include_router(
+    calidad_router
 )
 
 

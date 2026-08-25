@@ -1,6 +1,8 @@
-﻿from pathlib import Path
+from pathlib import Path
+import time
 
 import gspread
+from gspread.exceptions import APIError
 from google.oauth2.service_account import Credentials
 
 from backend.CONFIG.settings import settings
@@ -10,6 +12,47 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive.readonly",
 ]
+
+
+def abrir_spreadsheet(
+    client,
+    spreadsheet_id: str,
+    reintentos: int = 4,
+):
+    """
+    Abre un Google Sheet con reintentos
+    autom?ticos ante errores temporales 5xx.
+    """
+    for intento in range(1, reintentos + 1):
+        try:
+            return client.open_by_key(
+                spreadsheet_id
+            )
+        except APIError as error:
+            codigo = getattr(
+                getattr(
+                    error,
+                    "response",
+                    None,
+                ),
+                "status_code",
+                None,
+            )
+
+            if (
+                codigo not in {
+                    500,
+                    502,
+                    503,
+                    504,
+                }
+                or intento == reintentos
+            ):
+                raise
+
+            time.sleep(
+                2 ** (intento - 1)
+            )
 
 
 def crear_cliente_google_sheets():
@@ -39,7 +82,7 @@ def leer_encabezados(
     hoja: str,
 ) -> list[str]:
     client = crear_cliente_google_sheets()
-    spreadsheet = client.open_by_key(spreadsheet_id)
+    spreadsheet = abrir_spreadsheet(client, spreadsheet_id)
     worksheet = spreadsheet.worksheet(hoja)
 
     return worksheet.row_values(1)
@@ -54,7 +97,7 @@ def obtener_ultima_fila_con_datos(
     en la columna A.
     """
     client = crear_cliente_google_sheets()
-    spreadsheet = client.open_by_key(spreadsheet_id)
+    spreadsheet = abrir_spreadsheet(client, spreadsheet_id)
     worksheet = spreadsheet.worksheet(hoja)
 
     valores = worksheet.col_values(1)
@@ -105,7 +148,7 @@ def leer_filas(
         return []
 
     client = crear_cliente_google_sheets()
-    spreadsheet = client.open_by_key(spreadsheet_id)
+    spreadsheet = abrir_spreadsheet(client, spreadsheet_id)
     worksheet = spreadsheet.worksheet(hoja)
 
     rango = (
