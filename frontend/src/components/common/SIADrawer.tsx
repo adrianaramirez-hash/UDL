@@ -75,7 +75,7 @@ export function SIADrawer({
               onClick={onClose}
               className="rounded-lg p-2 transition hover:bg-muted"
             >
-              âœ•
+              ✕
             </button>
 
           </div>

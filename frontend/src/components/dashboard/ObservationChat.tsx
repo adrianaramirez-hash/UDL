@@ -19,7 +19,7 @@ const INITIAL_MESSAGES: ChatMessage[] = [
     id: 1,
     role: "assistant",
     text:
-      "Soy el Asesor SIA de ObservaciÃ³n de Clases. Puedes preguntarme por docentes, carreras, materias, promedios, observaciones y casos prioritarios.",
+      "Soy el Asesor SIA de Observación de Clases. Puedes preguntarme por docentes, carreras, materias, promedios, observaciones y casos prioritarios.",
   },
 ]
 
@@ -110,7 +110,7 @@ export function ObservationChat() {
             </p>
 
             <h2 className="mt-2 text-2xl sia-heading">
-              Pregunta sobre ObservaciÃ³n de Clases
+              Pregunta sobre Observación de Clases
             </h2>
 
             <p className="mt-2 text-sm text-muted-foreground">
@@ -124,7 +124,7 @@ export function ObservationChat() {
             onClick={clearConversation}
             className="shrink-0 rounded-xl border bg-white px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
           >
-            Nueva conversaciÃ³n
+            Nueva conversación
           </button>
         </div>
 
@@ -172,7 +172,7 @@ export function ObservationChat() {
           {loading && (
             <div className="flex justify-start">
               <div className="rounded-2xl border bg-white px-4 py-3 text-sm text-muted-foreground shadow-sm">
-                Analizando informaciÃ³n...
+                Analizando información...
               </div>
             </div>
           )}
@@ -213,10 +213,10 @@ export function ObservationChat() {
           <div className="mt-3 flex flex-wrap gap-2">
             {[
               "Busca a Diego Molina",
-              "Â¿QuÃ© fortalezas tiene?",
-              "Â¿QuÃ© recomendaciones recibiÃ³?",
-              "Â¿En quÃ© materia fue observado?",
-              "Â¿En quÃ© corte?",
+              "¿Qué fortalezas tiene?",
+              "¿Qué recomendaciones recibió?",
+              "¿En qué materia fue observado?",
+              "¿En qué corte?",
             ].map((suggestion) => (
               <button
                 key={suggestion}

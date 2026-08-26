@@ -1,9 +1,10 @@
-﻿import { useEffect, useState } from "react"
+import { useEffect, useState } from "react"
 import {
   Bar,
   BarChart,
   Cell,
   CartesianGrid,
+  LabelList,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -226,7 +227,25 @@ export default function EncuestaCalidad() {
                   </p>
                 </div>
 
-                <div className="mt-8 h-[460px] w-full">
+                <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                  <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-red-700">
+                    Crítico · 0–60
+                  </span>
+
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-700">
+                    Atención · &gt;60–75
+                  </span>
+
+                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700">
+                    Adecuado · &gt;75–85
+                  </span>
+
+                  <span className="rounded-full border border-emerald-300 bg-emerald-100 px-3 py-1 text-emerald-800">
+                    Fortaleza · &gt;85–100
+                  </span>
+                </div>
+
+                <div className="mt-6 h-[460px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
                       data={chartData}
@@ -270,6 +289,15 @@ export default function EncuestaCalidad() {
                             fill={getBarColor(item.indice)}
                           />
                         ))}
+
+                        <LabelList
+                          dataKey="indice"
+                          position="right"
+                          formatter={(value) =>
+                            Number(value).toFixed(2)
+                          }
+                          className="fill-foreground text-xs font-medium"
+                        />
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>

@@ -52,15 +52,15 @@ export default function ObservacionClases() {
 
         <div className="mx-auto w-full max-w-7xl px-8 py-8">
           <p className="sia-eyebrow">
-            CALIDAD ACADÃ‰MICA
+            CALIDAD ACADÉMICA
           </p>
 
           <h1 className="mt-2 text-5xl sia-heading">
-            ObservaciÃ³n de Clases
+            Observación de Clases
           </h1>
 
           <p className="mt-3 max-w-3xl text-muted-foreground">
-            Analiza el desempeÃ±o observado en aula, identifica tendencias,
+            Analiza el desempeño observado en aula, identifica tendencias,
             fortalezas y casos que requieren seguimiento.
           </p>
 
