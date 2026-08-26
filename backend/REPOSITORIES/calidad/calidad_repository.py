@@ -1,5 +1,6 @@
 ﻿from backend.CONFIG.settings import settings
 from backend.FUENTES.calidad.google_sheets import (
+    abrir_spreadsheet,
     crear_cliente_google_sheets,
 )
 
@@ -11,8 +12,9 @@ class CalidadRepository:
 
     def __init__(self):
         self.client = crear_cliente_google_sheets()
-        self.master = self.client.open_by_key(
-            settings.calidad_master_sheet_id
+        self.master = abrir_spreadsheet(
+            self.client,
+            settings.calidad_master_sheet_id,
         )
 
     def obtener_estado_etl(self) -> list[dict]:

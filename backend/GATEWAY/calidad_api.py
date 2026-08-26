@@ -1,4 +1,7 @@
-﻿from fastapi import APIRouter, HTTPException
+import threading
+import time
+
+from fastapi import APIRouter, HTTPException
 
 from backend.FUENTES.calidad.google_sheets import (
     leer_filas,
@@ -25,6 +28,11 @@ router = APIRouter(
 
 repository = CalidadRepository()
 
+_CACHE_TTL_SECONDS = 60
+_cache_lock = threading.Lock()
+_cache_resumen = None
+_cache_expira = 0.0
+
 
 def _numero_a_columna(numero: int) -> str:
     resultado = ""
@@ -43,8 +51,7 @@ def _numero_a_columna(numero: int) -> str:
     return resultado
 
 
-@router.get("/preview/resumen")
-def obtener_resumen_preview():
+def _calcular_resumen_preview():
     """
     Devuelve KPIs de las respuestas nuevas de ESC_MAIN.
 
@@ -153,3 +160,34 @@ def obtener_resumen_preview():
         "periodo_id": "ESC_2026_NUEVO",
         "version_instrumento": "FORM_2026",
     }
+
+
+@router.get("/preview/resumen")
+def obtener_resumen_preview():
+    global _cache_resumen, _cache_expira
+
+    ahora = time.monotonic()
+
+    if (
+        _cache_resumen is not None
+        and ahora < _cache_expira
+    ):
+        return _cache_resumen
+
+    with _cache_lock:
+        ahora = time.monotonic()
+
+        if (
+            _cache_resumen is not None
+            and ahora < _cache_expira
+        ):
+            return _cache_resumen
+
+        resumen = _calcular_resumen_preview()
+
+        _cache_resumen = resumen
+        _cache_expira = (
+            ahora + _CACHE_TTL_SECONDS
+        )
+
+        return resumen

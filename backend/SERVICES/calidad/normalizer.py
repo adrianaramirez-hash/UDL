@@ -1,5 +1,6 @@
 ﻿from backend.CONFIG.settings import settings
 from backend.FUENTES.calidad.google_sheets import (
+    abrir_spreadsheet,
     crear_cliente_google_sheets,
 )
 
@@ -13,8 +14,9 @@ def cargar_mapa_preguntas(
     """
     client = crear_cliente_google_sheets()
 
-    master = client.open_by_key(
-        settings.calidad_master_sheet_id
+    master = abrir_spreadsheet(
+        client,
+        settings.calidad_master_sheet_id,
     )
 
     worksheet = master.worksheet(
@@ -46,8 +48,9 @@ def cargar_catalogo_escalas() -> list[dict]:
     """
     client = crear_cliente_google_sheets()
 
-    master = client.open_by_key(
-        settings.calidad_master_sheet_id
+    master = abrir_spreadsheet(
+        client,
+        settings.calidad_master_sheet_id,
     )
 
     worksheet = master.worksheet(

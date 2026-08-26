@@ -2,6 +2,7 @@
 import {
   Bar,
   BarChart,
+  Cell,
   CartesianGrid,
   ResponsiveContainer,
   Tooltip,
@@ -44,6 +45,14 @@ function getNivelClasses(indice: number | null) {
   }
 
   return "border-slate-200 bg-slate-50 text-slate-600"
+}
+
+function getBarColor(indice: number | null) {
+  if (indice === null) return "#94a3b8"
+  if (indice <= 60) return "#dc2626"
+  if (indice <= 75) return "#d97706"
+  if (indice <= 85) return "#059669"
+  return "#047857"
 }
 
 export default function EncuestaCalidad() {
@@ -254,7 +263,14 @@ export default function EncuestaCalidad() {
                         dataKey="indice"
                         name="Índice"
                         radius={[0, 6, 6, 0]}
-                      />
+                      >
+                        {chartData.map((item) => (
+                          <Cell
+                            key={item.nombre}
+                            fill={getBarColor(item.indice)}
+                          />
+                        ))}
+                      </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -266,5 +282,3 @@ export default function EncuestaCalidad() {
     </div>
   )
 }
-
-

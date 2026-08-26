@@ -1,5 +1,6 @@
 ﻿from backend.CONFIG.settings import settings
 from backend.FUENTES.calidad.google_sheets import (
+    abrir_spreadsheet,
     crear_cliente_google_sheets,
     leer_encabezados,
 )
@@ -63,8 +64,9 @@ def _separar_header_critico(
 def cargar_firmas_activas() -> list[dict]:
     client = crear_cliente_google_sheets()
 
-    master = client.open_by_key(
-        settings.calidad_master_sheet_id
+    master = abrir_spreadsheet(
+        client,
+        settings.calidad_master_sheet_id,
     )
 
     worksheet = master.worksheet(
