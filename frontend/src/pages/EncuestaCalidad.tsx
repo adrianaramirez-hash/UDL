@@ -15,6 +15,7 @@ import { Header } from "@/components/layout/Header"
 import { Sidebar } from "@/components/layout/Sidebar"
 import {
   getCalidadSummary,
+  type CalidadFilterSelection,
   type CalidadSummary,
 } from "@/services/calidadService"
 
@@ -61,13 +62,20 @@ export default function EncuestaCalidad() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  const [filters, setFilters] =
+    useState<CalidadFilterSelection>({
+      periodo: "2026",
+      modalidad: "Escolarizadas",
+      servicio: "",
+    })
+
   useEffect(() => {
     async function cargarDatos() {
       try {
         setLoading(true)
         setError(null)
 
-        const data = await getCalidadSummary()
+        const data = await getCalidadSummary(filters)
 
         setSummary(data)
       } catch (err) {
@@ -82,7 +90,11 @@ export default function EncuestaCalidad() {
     }
 
     cargarDatos()
-  }, [])
+  }, [
+    filters.periodo,
+    filters.modalidad,
+    filters.servicio,
+  ])
 
   const chartData =
     summary?.secciones
@@ -118,13 +130,117 @@ export default function EncuestaCalidad() {
 
             {summary && (
               <div className="text-right text-sm text-muted-foreground">
-                <p>Periodo 2026</p>
+                <p>Periodo {summary.filtros.seleccion.periodo}</p>
                 <p>
                   Filas {summary.fila_inicio}–{summary.fila_fin}
                 </p>
               </div>
             )}
           </div>
+
+          {summary && (
+            <div className="mt-8 rounded-2xl border bg-card p-5 shadow-sm">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-end">
+                <div className="min-w-[180px] flex-1">
+                  <label className="mb-2 block text-xs font-medium text-muted-foreground">
+                    Periodo
+                  </label>
+
+                  <select
+                    value={filters.periodo ?? ""}
+                    onChange={(event) =>
+                      setFilters((current) => ({
+                        ...current,
+                        periodo: event.target.value,
+                        modalidad: "Escolarizadas",
+                        servicio: "",
+                      }))
+                    }
+                    className="w-full rounded-xl border bg-background px-4 py-2.5 text-sm outline-none transition focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+                  >
+                    {summary.filtros.periodos.map((periodo) => (
+                      <option key={periodo} value={periodo}>
+                        {periodo}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="min-w-[220px] flex-1">
+                  <label className="mb-2 block text-xs font-medium text-muted-foreground">
+                    Modalidad
+                  </label>
+
+                  <select
+                    value={filters.modalidad ?? ""}
+                    onChange={(event) =>
+                      setFilters((current) => ({
+                        ...current,
+                        modalidad: event.target.value,
+                        servicio: "",
+                      }))
+                    }
+                    className="w-full rounded-xl border bg-background px-4 py-2.5 text-sm outline-none transition focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+                  >
+                    {summary.filtros.modalidades.map((modalidad) => (
+                      <option key={modalidad} value={modalidad}>
+                        {modalidad}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="min-w-[280px] flex-[1.5]">
+                  <label className="mb-2 block text-xs font-medium text-muted-foreground">
+                    {filters.modalidad === "Prepa"
+                    ? "Grado"
+                    : filters.modalidad === "Virtuales"
+                      ? "Programa"
+                      : "Servicio / programa"}
+                  </label>
+
+                  <select
+                    value={filters.servicio ?? ""}
+                    onChange={(event) =>
+                      setFilters((current) => ({
+                        ...current,
+                        servicio: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border bg-background px-4 py-2.5 text-sm outline-none transition focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+                  >
+                    <option value="">
+                      {filters.modalidad === "Prepa"
+                        ? "Todos los grados"
+                        : filters.modalidad === "Virtuales"
+                          ? "Todos los programas"
+                          : "Todos los servicios"}
+                    </option>
+
+                    {summary.filtros.servicios.map((servicio) => (
+                      <option key={servicio} value={servicio}>
+                        {servicio}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFilters({
+                      periodo: "2026",
+                      modalidad: "Escolarizadas",
+                      servicio: "",
+                    })
+                  }
+                  className="rounded-xl border bg-background px-5 py-2.5 text-sm font-medium transition hover:bg-muted"
+                >
+                  Limpiar filtros
+                </button>
+              </div>
+            </div>
+          )}
 
           {loading && (
             <div className="mt-10 rounded-2xl border bg-card p-8">
