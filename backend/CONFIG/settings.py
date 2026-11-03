@@ -1,4 +1,4 @@
-﻿import os
+import os
 from dataclasses import dataclass
 
 from dotenv import load_dotenv
@@ -17,11 +17,27 @@ class Settings:
     calidad_pre_main_sheet_id: str
     calidad_esc_archive_sheet_id: str
 
+    sia_ai_provider: str
+    sia_ai_api_key: str
+    sia_ai_model: str
+
 
 def cargar_settings() -> Settings:
     return Settings(
         google_application_credentials=os.getenv(
             "GOOGLE_APPLICATION_CREDENTIALS",
+            "",
+        ).strip(),
+        sia_ai_provider=os.getenv(
+            "SIA_AI_PROVIDER",
+            "",
+        ).strip(),
+        sia_ai_api_key=os.getenv(
+            "SIA_AI_API_KEY",
+            "",
+        ).strip(),
+        sia_ai_model=os.getenv(
+            "SIA_AI_MODEL",
             "",
         ).strip(),
         oc_sheet_url=os.getenv(

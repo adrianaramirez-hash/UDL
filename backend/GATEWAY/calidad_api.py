@@ -14,6 +14,7 @@ from backend.SERVICES.calidad.kpi_service import (
     calcular_kpis_preview,
 )
 from backend.SERVICES.calidad.normalizer import (
+    cargar_mapa_preguntas,
     normalizar_filas_esc_preview,
     normalizar_filas_preview,
 )
@@ -136,6 +137,85 @@ def _calcular_base_preview(
 
     fuente_id = configuracion["fuente_id"]
 
+    mapa_preguntas = cargar_mapa_preguntas(
+        fuente_id,
+        anio,
+    )
+
+    secciones_formulario = []
+    secciones_vistas = set()
+
+    for pregunta in mapa_preguntas:
+        seccion_id = str(
+            pregunta.get(
+                "SECCION_ID",
+                "",
+            )
+        ).strip()
+
+        seccion_nombre = str(
+            pregunta.get(
+                "SECCION_NOMBRE",
+                "",
+            )
+        ).strip()
+
+        if (
+            not seccion_id
+            or seccion_id in secciones_vistas
+        ):
+            continue
+
+        secciones_vistas.add(
+            seccion_id
+        )
+
+        preguntas_de_seccion = [
+            item
+            for item in mapa_preguntas
+            if str(
+                item.get(
+                    "SECCION_ID",
+                    "",
+                )
+            ).strip() == seccion_id
+        ]
+
+        reactivos_indice_total = sum(
+            1
+            for item in preguntas_de_seccion
+            if str(
+                item.get(
+                    "ENTRA_PROMEDIO_SECCION",
+                    "",
+                )
+            ).strip().casefold().startswith("s")
+        )
+
+        entra_general = any(
+            str(
+                item.get(
+                    "ENTRA_PROMEDIO_GENERAL",
+                    "",
+                )
+            ).strip().casefold().startswith("s")
+            for item in preguntas_de_seccion
+        )
+
+        secciones_formulario.append(
+            {
+                "seccion_id": seccion_id,
+                "seccion_nombre": seccion_nombre,
+                "preguntas_formulario_total": len(
+                    preguntas_de_seccion
+                ),
+                "reactivos_indice_total": (
+                    reactivos_indice_total
+                ),
+                "entra_general": entra_general,
+            }
+        )
+
     validacion = None
 
     if periodo == "2026":
@@ -209,6 +289,7 @@ def _calcular_base_preview(
             "version_instrumento": configuracion[
                 "version_instrumento"
             ],
+            "secciones_formulario": secciones_formulario,
         }
 
     if periodo == "2025":
@@ -276,6 +357,7 @@ def _calcular_base_preview(
         "version_instrumento": configuracion[
             "version_instrumento"
         ],
+        "secciones_formulario": secciones_formulario,
     }
 
 
@@ -346,6 +428,7 @@ def obtener_resumen_preview(
     periodo: str | None = None,
     modalidad: str | None = None,
     servicio: str | None = None,
+    historico: bool = False,
 ):
     periodo_seleccionado = (
         periodo.strip()
@@ -416,7 +499,63 @@ def obtener_resumen_preview(
         ]
 
     kpis = calcular_kpis_preview(
-        registros_filtrados
+        registros_filtrados,
+        solo_comparables_historico=historico,
+    )
+
+    secciones_kpi = {
+        seccion["seccion_id"]: seccion
+        for seccion in kpis.get(
+            "secciones",
+            [],
+        )
+    }
+
+    secciones_completas = []
+
+    for seccion in base.get(
+        "secciones_formulario",
+        [],
+    ):
+        resultado = secciones_kpi.get(
+            seccion["seccion_id"]
+        )
+
+        secciones_completas.append(
+            {
+                "seccion_id": seccion[
+                    "seccion_id"
+                ],
+                "seccion_nombre": seccion[
+                    "seccion_nombre"
+                ],
+                "indice": (
+                    resultado.get("indice")
+                    if resultado
+                    else None
+                ),
+                "preguntas_con_datos": (
+                    resultado.get(
+                        "preguntas_con_datos",
+                        0,
+                    )
+                    if resultado
+                    else 0
+                ),
+                "preguntas_formulario_total": seccion[
+                    "preguntas_formulario_total"
+                ],
+                "reactivos_indice_total": seccion[
+                    "reactivos_indice_total"
+                ],
+                "entra_general": seccion[
+                    "entra_general"
+                ],
+            }
+        )
+
+    kpis["secciones"] = (
+        secciones_completas
     )
 
     modalidades = (
