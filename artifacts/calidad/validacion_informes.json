@@ -1,0 +1,1500 @@
+{
+  "source_rows": {
+    "2026": 37597,
+    "2025": 94437
+  },
+  "cases": [
+    {
+      "name": "Global",
+      "file": "artifacts\\calidad\\Informe_de_resultados_Escolarizadas_Global_2026.pdf",
+      "sha256": "3e770397bcc7d600c2ba250bd0c733fb4fe6cb7dbbeb5d5796dc894907d786a2",
+      "pages": 14,
+      "filters": {
+        "source": "Escolarizadas",
+        "period": "2026",
+        "career": "Todas las carreras",
+        "modality": "Todas las modalidades"
+      },
+      "index": 72.11,
+      "surveys": 638,
+      "responses": 26986,
+      "page_checks": [
+        {
+          "page": 1,
+          "text_length": 966,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Global-01.png",
+          "margins_ok": true
+        },
+        {
+          "page": 2,
+          "text_length": 845,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Global-02.png",
+          "margins_ok": true
+        },
+        {
+          "page": 3,
+          "text_length": 1215,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Global-03.png",
+          "margins_ok": true
+        },
+        {
+          "page": 4,
+          "text_length": 1137,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Global-04.png",
+          "margins_ok": true
+        },
+        {
+          "page": 5,
+          "text_length": 1204,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Global-05.png",
+          "margins_ok": true
+        },
+        {
+          "page": 6,
+          "text_length": 990,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Global-06.png",
+          "margins_ok": true
+        },
+        {
+          "page": 7,
+          "text_length": 772,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Global-07.png",
+          "margins_ok": true
+        },
+        {
+          "page": 8,
+          "text_length": 1015,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Global-08.png",
+          "margins_ok": true
+        },
+        {
+          "page": 9,
+          "text_length": 910,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Global-09.png",
+          "margins_ok": true
+        },
+        {
+          "page": 10,
+          "text_length": 898,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Global-10.png",
+          "margins_ok": true
+        },
+        {
+          "page": 11,
+          "text_length": 822,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Global-11.png",
+          "margins_ok": true
+        },
+        {
+          "page": 12,
+          "text_length": 970,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Global-12.png",
+          "margins_ok": true
+        },
+        {
+          "page": 13,
+          "text_length": 1060,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Global-13.png",
+          "margins_ok": true
+        },
+        {
+          "page": 14,
+          "text_length": 1022,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Global-14.png",
+          "margins_ok": true
+        }
+      ],
+      "modules": [
+        {
+          "id": "direction",
+          "name": "Dirección",
+          "index": 67.03,
+          "responses": 1340,
+          "surveys": 335,
+          "history": [
+            69.13,
+            67.03
+          ],
+          "criteria": [
+            {
+              "id": "ESC_DIR_01",
+              "name": "Disponibilidad",
+              "value": 66.64,
+              "n": 335,
+              "unit": "pts",
+              "previous": 69.24,
+              "compared_current": 66.64,
+              "delta": -2.6
+            },
+            {
+              "id": "ESC_DIR_04",
+              "name": "Seguimiento / desempeño docente",
+              "value": 66.87,
+              "n": 335,
+              "unit": "pts",
+              "previous": 68.96,
+              "compared_current": 66.87,
+              "delta": -2.09
+            },
+            {
+              "id": "ESC_DIR_03",
+              "name": "Solución de problemas",
+              "value": 66.87,
+              "n": 335,
+              "unit": "pts",
+              "previous": 68.73,
+              "compared_current": 66.87,
+              "delta": -1.86
+            },
+            {
+              "id": "ESC_DIR_02",
+              "name": "Atención a necesidades",
+              "value": 67.76,
+              "n": 335,
+              "unit": "pts",
+              "previous": 69.61,
+              "compared_current": 67.76,
+              "delta": -1.85
+            }
+          ]
+        },
+        {
+          "id": "staff",
+          "name": "Asistentes/coordinadores",
+          "index": 69.41,
+          "responses": 1600,
+          "surveys": 398,
+          "people_count": 11,
+          "history": [
+            null,
+            null
+          ],
+          "criteria": []
+        },
+        {
+          "id": "institutional",
+          "name": "Servicios institucionales",
+          "index": 74.54,
+          "responses": 5087,
+          "surveys": 633,
+          "history": [
+            70.33,
+            74.54
+          ],
+          "criteria": [
+            {
+              "id": "SER_PARAMEDICO",
+              "name": "Servicio institucional 09",
+              "value": 66.7,
+              "n": 289,
+              "unit": "pts",
+              "previous": 57.83,
+              "compared_current": 66.7,
+              "delta": 8.87
+            },
+            {
+              "id": "SER_BOLSA_TRABAJO",
+              "name": "Bolsa de Trabajo",
+              "value": 67.78,
+              "n": 239,
+              "unit": "pts",
+              "previous": 63.98,
+              "compared_current": 67.78,
+              "delta": 3.8
+            },
+            {
+              "id": "SER_TITULACIONES",
+              "name": "Titulaciones",
+              "value": 71.17,
+              "n": 300,
+              "unit": "pts",
+              "previous": 69.24,
+              "compared_current": 71.17,
+              "delta": 1.93
+            },
+            {
+              "id": "SER_COBRANZAS",
+              "name": "Cobranzas",
+              "value": 72.35,
+              "n": 575,
+              "unit": "pts",
+              "previous": 67.87,
+              "compared_current": 72.35,
+              "delta": 4.48
+            },
+            {
+              "id": "SER_MANTENIMIENTO",
+              "name": "Mantenimiento de instalaciones",
+              "value": 73.58,
+              "n": 583,
+              "unit": "pts",
+              "previous": 69.78,
+              "compared_current": 73.58,
+              "delta": 3.8
+            },
+            {
+              "id": "SER_PSICO_DESARROLLO",
+              "name": "Desarrollo Estudiantil",
+              "value": 73.74,
+              "n": 358,
+              "unit": "pts",
+              "previous": 70.0,
+              "compared_current": 73.74,
+              "delta": 3.74
+            },
+            {
+              "id": "SER_SERV_ESCOLARES",
+              "name": "Servicios escolares",
+              "value": 74.38,
+              "n": 565,
+              "unit": "pts",
+              "previous": 69.86,
+              "compared_current": 74.38,
+              "delta": 4.52
+            },
+            {
+              "id": "SER_BECAS",
+              "name": "Becas",
+              "value": 75.04,
+              "n": 584,
+              "unit": "pts",
+              "previous": 71.84,
+              "compared_current": 75.04,
+              "delta": 3.2
+            },
+            {
+              "id": "SER_ADMISIONES",
+              "name": "Admisiones",
+              "value": 77.12,
+              "n": 424,
+              "unit": "pts",
+              "previous": 72.03,
+              "compared_current": 77.12,
+              "delta": 5.09
+            },
+            {
+              "id": "SER_VIGILANCIA",
+              "name": "Vigilancia",
+              "value": 82.59,
+              "n": 583,
+              "unit": "pts",
+              "previous": 79.73,
+              "compared_current": 82.59,
+              "delta": 2.86
+            },
+            {
+              "id": "SER_INTENDENCIA",
+              "name": "Intendencia (limpieza)",
+              "value": 85.52,
+              "n": 587,
+              "unit": "pts",
+              "previous": 81.49,
+              "compared_current": 85.52,
+              "delta": 4.03
+            }
+          ]
+        },
+        {
+          "id": "academic",
+          "name": "Servicios académicos",
+          "index": 72.88,
+          "responses": 6812,
+          "surveys": 635,
+          "history": [
+            70.1,
+            72.88
+          ],
+          "criteria": [
+            {
+              "id": "ACA_SEAC_APPS",
+              "name": "SEAC · Apps móviles",
+              "value": 60.64,
+              "n": 564,
+              "unit": "pts",
+              "previous": 56.08,
+              "compared_current": 60.64,
+              "delta": 4.56
+            },
+            {
+              "id": "ACA_SEAC_GENERAL",
+              "name": "Plataforma SEAC en general",
+              "value": 66.09,
+              "n": 631,
+              "unit": "pts",
+              "previous": 62.59,
+              "compared_current": 66.09,
+              "delta": 3.5
+            },
+            {
+              "id": "ACA_SEAC_TRAMITES",
+              "name": "SEAC · Trámites administrativos",
+              "value": 68.05,
+              "n": 601,
+              "unit": "pts",
+              "previous": 65.62,
+              "compared_current": 68.05,
+              "delta": 2.43
+            },
+            {
+              "id": "ACA_SEAC_INGRESO",
+              "name": "SEAC · Facilidad para ingresar",
+              "value": 69.54,
+              "n": 632,
+              "unit": "pts",
+              "previous": 64.54,
+              "compared_current": 69.54,
+              "delta": 5.0
+            },
+            {
+              "id": "ACA_CLASES_ZOOM",
+              "name": "Clases en Zoom",
+              "value": 70.49,
+              "n": 521,
+              "unit": "pts",
+              "previous": 65.22,
+              "compared_current": 70.49,
+              "delta": 5.27
+            },
+            {
+              "id": "ACA_SEAC_TAREAS",
+              "name": "SEAC · Tareas y trabajos",
+              "value": 71.23,
+              "n": 624,
+              "unit": "pts",
+              "previous": 67.87,
+              "compared_current": 71.23,
+              "delta": 3.36
+            },
+            {
+              "id": "ACA_CERTIFICACIONES",
+              "name": "Certificaciones",
+              "value": 72.58,
+              "n": 423,
+              "unit": "pts",
+              "previous": 71.25,
+              "compared_current": 72.58,
+              "delta": 1.33
+            },
+            {
+              "id": "ACA_AULAS_VIRTUALES",
+              "name": "Contenidos de las Aulas Virtuales",
+              "value": 74.66,
+              "n": 586,
+              "unit": "pts",
+              "previous": 71.72,
+              "compared_current": 74.66,
+              "delta": 2.94
+            },
+            {
+              "id": "ACA_PLAN_ESTUDIOS",
+              "name": "Plan de estudios",
+              "value": 77.97,
+              "n": 631,
+              "unit": "pts",
+              "previous": 79.77,
+              "compared_current": 77.97,
+              "delta": -1.8
+            },
+            {
+              "id": "ACA_PRACTICAS",
+              "name": "Prácticas académicas",
+              "value": 78.22,
+              "n": 365,
+              "unit": "pts",
+              "previous": 75.17,
+              "compared_current": 78.22,
+              "delta": 3.05
+            },
+            {
+              "id": "ACA_CLASES_PRESENCIALES",
+              "name": "Clases presenciales",
+              "value": 82.47,
+              "n": 606,
+              "unit": "pts",
+              "previous": 81.51,
+              "compared_current": 82.47,
+              "delta": 0.96
+            },
+            {
+              "id": "ACA_PROFESORES",
+              "name": "Profesores / Asesores",
+              "value": 82.64,
+              "n": 628,
+              "unit": "pts",
+              "previous": 79.87,
+              "compared_current": 82.64,
+              "delta": 2.77
+            }
+          ]
+        },
+        {
+          "id": "facilities",
+          "name": "Instalaciones y equipo tecnológico",
+          "index": 67.86,
+          "responses": 5428,
+          "surveys": 611,
+          "history": [
+            65.24,
+            67.86
+          ],
+          "criteria": [
+            {
+              "id": "INS_WIFI",
+              "name": "WiFi para estudiantes",
+              "value": 60.7,
+              "n": 596,
+              "unit": "pts",
+              "previous": 54.44,
+              "compared_current": 60.7,
+              "delta": 6.26
+            },
+            {
+              "id": "INS_CAFETERIA",
+              "name": "Cafetería",
+              "value": 61.07,
+              "n": 463,
+              "unit": "pts",
+              "previous": 57.64,
+              "compared_current": 61.07,
+              "delta": 3.43
+            },
+            {
+              "id": "INS_LAB_COMPUTO",
+              "name": "Laboratorio de cómputo",
+              "value": 63.12,
+              "n": 385,
+              "unit": "pts",
+              "previous": 58.58,
+              "compared_current": 63.12,
+              "delta": 4.54
+            },
+            {
+              "id": "INS_HYFLEX",
+              "name": "Equipo didáctico HyFlex",
+              "value": 66.81,
+              "n": 577,
+              "unit": "pts",
+              "previous": 66.66,
+              "compared_current": 66.81,
+              "delta": 0.15
+            },
+            {
+              "id": "INS_AIRE_LIBRE",
+              "name": "Espacios al aire libre",
+              "value": 66.95,
+              "n": 565,
+              "unit": "pts",
+              "previous": 65.12,
+              "compared_current": 66.95,
+              "delta": 1.83
+            },
+            {
+              "id": "INS_PLANTEL",
+              "name": "Instalaciones del plantel",
+              "value": 69.12,
+              "n": 600,
+              "unit": "pts",
+              "previous": 67.75,
+              "compared_current": 69.12,
+              "delta": 1.37
+            },
+            {
+              "id": "INS_SALONES",
+              "name": "Salones de clase",
+              "value": 71.14,
+              "n": 603,
+              "unit": "pts",
+              "previous": 69.17,
+              "compared_current": 71.14,
+              "delta": 1.97
+            },
+            {
+              "id": "INS_ESPECIFICAS",
+              "name": "Instalaciones específicas para el aprendizaje",
+              "value": 72.34,
+              "n": 592,
+              "unit": "pts",
+              "previous": 70.26,
+              "compared_current": 72.34,
+              "delta": 2.08
+            },
+            {
+              "id": "INS_BIBLIOTECA",
+              "name": "Biblioteca",
+              "value": 72.57,
+              "n": 442,
+              "unit": "pts",
+              "previous": 69.68,
+              "compared_current": 72.57,
+              "delta": 2.89
+            },
+            {
+              "id": "INS_SANITARIOS",
+              "name": "Sanitarios",
+              "value": 74.75,
+              "n": 605,
+              "unit": "pts",
+              "previous": 73.12,
+              "compared_current": 74.75,
+              "delta": 1.63
+            }
+          ]
+        },
+        {
+          "id": "environment",
+          "name": "Ambiente escolar",
+          "index": 79.83,
+          "responses": 1851,
+          "surveys": 638,
+          "history": [
+            77.8,
+            79.83
+          ],
+          "criteria": [
+            {
+              "id": "AMB_REL_COMP",
+              "name": "Relación con compañeros",
+              "value": 78.39,
+              "n": 634,
+              "unit": "pts",
+              "previous": 75.6,
+              "compared_current": 78.39,
+              "delta": 2.79
+            },
+            {
+              "id": "AMB_AMBIENTE",
+              "name": "Ambiente escolar en mi servicio",
+              "value": 79.02,
+              "n": 584,
+              "unit": "pts",
+              "previous": 76.84,
+              "compared_current": 79.02,
+              "delta": 2.18
+            },
+            {
+              "id": "AMB_REL_PROF",
+              "name": "Relación con profesores / asesores",
+              "value": 82.07,
+              "n": 633,
+              "unit": "pts",
+              "previous": 80.96,
+              "compared_current": 82.07,
+              "delta": 1.11
+            }
+          ],
+          "incidence": {
+            "id": "AMB_PROBLEMA",
+            "name": "Incidencia reportada",
+            "value": 10.19,
+            "n": 638,
+            "unit": "pp",
+            "previous": 12.43,
+            "compared_current": 10.19,
+            "delta": -2.24,
+            "yes": 65,
+            "no": 573
+          }
+        },
+        {
+          "id": "satisfaction",
+          "name": "Satisfacción y recomendación",
+          "index": null,
+          "surveys": 638,
+          "history": null,
+          "criteria": [
+            {
+              "id": "SAT_GENERAL",
+              "name": "Satisfacción general",
+              "value": 70.53,
+              "n": 638,
+              "unit": "pts",
+              "previous": 66.52,
+              "compared_current": 70.53,
+              "delta": 4.01
+            },
+            {
+              "id": "REC_UDL",
+              "name": "Recomendación",
+              "value": 89.18,
+              "n": 638,
+              "unit": "pp",
+              "previous": 89.45,
+              "compared_current": 89.18,
+              "delta": -0.27
+            }
+          ]
+        },
+        {
+          "id": "languages",
+          "name": "Centro de Idiomas",
+          "index": null,
+          "responses": 282,
+          "surveys": 637,
+          "history": null,
+          "current_only": true,
+          "usage": {
+            "si": 94,
+            "no": 543,
+            "total_valido": 637,
+            "si_pct": 14.76,
+            "no_pct": 85.24
+          },
+          "criteria": [
+            {
+              "id": "IDI_SAT_OFICINA",
+              "name": "¿En general es satisfactorio para ti el servicio que te ofrecen en la oficina del Centro de Idiomas?",
+              "value": 88.03,
+              "n": 94,
+              "unit": "pts",
+              "previous": null,
+              "compared_current": null,
+              "delta": null
+            },
+            {
+              "id": "IDI_SAT_DOCENTE",
+              "name": "¿En general estás satisfecho con tu docente?",
+              "value": 91.49,
+              "n": 94,
+              "unit": "pts",
+              "previous": null,
+              "compared_current": null,
+              "delta": null
+            },
+            {
+              "id": "IDI_GUSTO_CLASE",
+              "name": "¿En general te gusta tu clase?",
+              "value": 92.02,
+              "n": 94,
+              "unit": "pts",
+              "previous": null,
+              "compared_current": null,
+              "delta": null
+            }
+          ],
+          "local_filters": {
+            "Idioma": "",
+            "Tipo de curso": ""
+          }
+        },
+        {
+          "id": "continuing",
+          "name": "Educación Continua",
+          "index": null,
+          "responses": 1398,
+          "surveys": 637,
+          "history": null,
+          "current_only": true,
+          "usage": {
+            "si": 31,
+            "no": 606,
+            "total_valido": 637,
+            "si_pct": 4.87,
+            "no_pct": 95.13
+          },
+          "criteria": [
+            {
+              "id": "EC_CONOCE",
+              "name": "Conocimiento de cursos, talleres y diplomados",
+              "value": 35.79,
+              "n": 637,
+              "unit": "pp",
+              "previous": null,
+              "compared_current": null,
+              "delta": null
+            },
+            {
+              "id": "EC_SABE_DONDE",
+              "name": "Conocimiento de dónde consultar la oferta académica",
+              "value": 43.49,
+              "n": 637,
+              "unit": "pp",
+              "previous": null,
+              "compared_current": null,
+              "delta": null
+            },
+            {
+              "id": "EC_HORARIOS",
+              "name": "Horarios y modalidades",
+              "value": 73.39,
+              "n": 31,
+              "unit": "pts",
+              "previous": null,
+              "compared_current": null,
+              "delta": null
+            },
+            {
+              "id": "EC_CALIDAD",
+              "name": "Calidad de cursos y diplomados",
+              "value": 75.0,
+              "n": 31,
+              "unit": "pts",
+              "previous": null,
+              "compared_current": null,
+              "delta": null
+            },
+            {
+              "id": "EC_TEMAS",
+              "name": "Relevancia de los temas para la formación profesional",
+              "value": 76.61,
+              "n": 31,
+              "unit": "pts",
+              "previous": null,
+              "compared_current": null,
+              "delta": null
+            },
+            {
+              "id": "EC_RECOMIENDA",
+              "name": "Recomendación de programas de Educación Continua",
+              "value": 83.87,
+              "n": 31,
+              "unit": "pp",
+              "previous": null,
+              "compared_current": null,
+              "delta": null
+            }
+          ],
+          "local_filters": {
+            "Participación": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Derecho_Presencial",
+      "file": "artifacts\\calidad\\Informe_de_resultados_Escolarizadas_Derecho_Presencial_2026.pdf",
+      "sha256": "b23599b69b77d55a4de7991e55607e0707abc79c1bb796c8b989afe9f4e786bf",
+      "pages": 11,
+      "filters": {
+        "source": "Escolarizadas",
+        "period": "2026",
+        "career": "Derecho",
+        "modality": "Presencial"
+      },
+      "index": 65.45,
+      "surveys": 27,
+      "responses": 1234,
+      "page_checks": [
+        {
+          "page": 1,
+          "text_length": 920,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Derecho_Presencial-01.png",
+          "margins_ok": true
+        },
+        {
+          "page": 2,
+          "text_length": 1219,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Derecho_Presencial-02.png",
+          "margins_ok": true
+        },
+        {
+          "page": 3,
+          "text_length": 941,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Derecho_Presencial-03.png",
+          "margins_ok": true
+        },
+        {
+          "page": 4,
+          "text_length": 763,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Derecho_Presencial-04.png",
+          "margins_ok": true
+        },
+        {
+          "page": 5,
+          "text_length": 976,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Derecho_Presencial-05.png",
+          "margins_ok": true
+        },
+        {
+          "page": 6,
+          "text_length": 891,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Derecho_Presencial-06.png",
+          "margins_ok": true
+        },
+        {
+          "page": 7,
+          "text_length": 853,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Derecho_Presencial-07.png",
+          "margins_ok": true
+        },
+        {
+          "page": 8,
+          "text_length": 808,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Derecho_Presencial-08.png",
+          "margins_ok": true
+        },
+        {
+          "page": 9,
+          "text_length": 939,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Derecho_Presencial-09.png",
+          "margins_ok": true
+        },
+        {
+          "page": 10,
+          "text_length": 1029,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Derecho_Presencial-10.png",
+          "margins_ok": true
+        },
+        {
+          "page": 11,
+          "text_length": 991,
+          "image": "C:\\Users\\Usuario\\AppData\\Local\\Temp\\udl-pdf-final-review\\Derecho_Presencial-11.png",
+          "margins_ok": true
+        }
+      ],
+      "modules": [
+        {
+          "id": "direction",
+          "name": "Dirección",
+          "index": 59.49,
+          "responses": 108,
+          "surveys": 27,
+          "history": [
+            61.5,
+            59.49
+          ],
+          "criteria": [
+            {
+              "id": "ESC_DIR_03",
+              "name": "Solución de problemas",
+              "value": 57.41,
+              "n": 27,
+              "unit": "pts",
+              "previous": 60.92,
+              "compared_current": 57.41,
+              "delta": -3.51
+            },
+            {
+              "id": "ESC_DIR_04",
+              "name": "Seguimiento / desempeño docente",
+              "value": 58.33,
+              "n": 27,
+              "unit": "pts",
+              "previous": 61.93,
+              "compared_current": 58.33,
+              "delta": -3.6
+            },
+            {
+              "id": "ESC_DIR_02",
+              "name": "Atención a necesidades",
+              "value": 60.19,
+              "n": 27,
+              "unit": "pts",
+              "previous": 62.36,
+              "compared_current": 60.19,
+              "delta": -2.17
+            },
+            {
+              "id": "ESC_DIR_01",
+              "name": "Disponibilidad",
+              "value": 62.04,
+              "n": 27,
+              "unit": "pts",
+              "previous": 60.78,
+              "compared_current": 62.04,
+              "delta": 1.26
+            }
+          ]
+        },
+        {
+          "id": "staff",
+          "name": "Asistentes/coordinadores",
+          "index": 70.14,
+          "responses": 108,
+          "surveys": 27,
+          "people_count": 1,
+          "history": [
+            null,
+            null
+          ],
+          "criteria": []
+        },
+        {
+          "id": "institutional",
+          "name": "Servicios institucionales",
+          "index": 67.45,
+          "responses": 205,
+          "surveys": 27,
+          "history": [
+            68.01,
+            67.45
+          ],
+          "criteria": [
+            {
+              "id": "SER_BOLSA_TRABAJO",
+              "name": "Bolsa de Trabajo",
+              "value": 55.0,
+              "n": 10,
+              "unit": "pts",
+              "previous": 61.05,
+              "compared_current": 55.0,
+              "delta": -6.05
+            },
+            {
+              "id": "SER_PARAMEDICO",
+              "name": "Servicio institucional 09",
+              "value": 56.25,
+              "n": 8,
+              "unit": "pts",
+              "previous": 61.01,
+              "compared_current": 56.25,
+              "delta": -4.76
+            },
+            {
+              "id": "SER_TITULACIONES",
+              "name": "Titulaciones",
+              "value": 60.0,
+              "n": 10,
+              "unit": "pts",
+              "previous": 65.91,
+              "compared_current": 60.0,
+              "delta": -5.91
+            },
+            {
+              "id": "SER_MANTENIMIENTO",
+              "name": "Mantenimiento de instalaciones",
+              "value": 61.0,
+              "n": 25,
+              "unit": "pts",
+              "previous": 68.29,
+              "compared_current": 61.0,
+              "delta": -7.29
+            },
+            {
+              "id": "SER_COBRANZAS",
+              "name": "Cobranzas",
+              "value": 67.71,
+              "n": 24,
+              "unit": "pts",
+              "previous": 65.56,
+              "compared_current": 67.71,
+              "delta": 2.15
+            },
+            {
+              "id": "SER_BECAS",
+              "name": "Becas",
+              "value": 68.75,
+              "n": 24,
+              "unit": "pts",
+              "previous": 68.45,
+              "compared_current": 68.75,
+              "delta": 0.3
+            },
+            {
+              "id": "SER_SERV_ESCOLARES",
+              "name": "Servicios escolares",
+              "value": 68.75,
+              "n": 24,
+              "unit": "pts",
+              "previous": 65.72,
+              "compared_current": 68.75,
+              "delta": 3.03
+            },
+            {
+              "id": "SER_ADMISIONES",
+              "name": "Admisiones",
+              "value": 70.0,
+              "n": 15,
+              "unit": "pts",
+              "previous": 67.18,
+              "compared_current": 70.0,
+              "delta": 2.82
+            },
+            {
+              "id": "SER_PSICO_DESARROLLO",
+              "name": "Desarrollo Estudiantil",
+              "value": 71.15,
+              "n": 13,
+              "unit": "pts",
+              "previous": 70.65,
+              "compared_current": 71.15,
+              "delta": 0.5
+            },
+            {
+              "id": "SER_INTENDENCIA",
+              "name": "Intendencia (limpieza)",
+              "value": 71.3,
+              "n": 27,
+              "unit": "pts",
+              "previous": 73.5,
+              "compared_current": 71.3,
+              "delta": -2.2
+            },
+            {
+              "id": "SER_VIGILANCIA",
+              "name": "Vigilancia",
+              "value": 92.0,
+              "n": 25,
+              "unit": "pts",
+              "previous": 80.77,
+              "compared_current": 92.0,
+              "delta": 11.23
+            }
+          ]
+        },
+        {
+          "id": "academic",
+          "name": "Servicios académicos",
+          "index": 65.56,
+          "responses": 291,
+          "surveys": 26,
+          "history": [
+            69.48,
+            65.56
+          ],
+          "criteria": [
+            {
+              "id": "ACA_SEAC_APPS",
+              "name": "SEAC · Apps móviles",
+              "value": 53.26,
+              "n": 23,
+              "unit": "pts",
+              "previous": 62.89,
+              "compared_current": 53.26,
+              "delta": -9.63
+            },
+            {
+              "id": "ACA_CERTIFICACIONES",
+              "name": "Certificaciones",
+              "value": 54.76,
+              "n": 21,
+              "unit": "pts",
+              "previous": 68.9,
+              "compared_current": 54.76,
+              "delta": -14.14
+            },
+            {
+              "id": "ACA_SEAC_TRAMITES",
+              "name": "SEAC · Trámites administrativos",
+              "value": 58.65,
+              "n": 26,
+              "unit": "pts",
+              "previous": 64.07,
+              "compared_current": 58.65,
+              "delta": -5.42
+            },
+            {
+              "id": "ACA_CLASES_ZOOM",
+              "name": "Clases en Zoom",
+              "value": 59.09,
+              "n": 22,
+              "unit": "pts",
+              "previous": 62.86,
+              "compared_current": 59.09,
+              "delta": -3.77
+            },
+            {
+              "id": "ACA_SEAC_GENERAL",
+              "name": "Plataforma SEAC en general",
+              "value": 60.58,
+              "n": 26,
+              "unit": "pts",
+              "previous": 63.08,
+              "compared_current": 60.58,
+              "delta": -2.5
+            },
+            {
+              "id": "ACA_SEAC_INGRESO",
+              "name": "SEAC · Facilidad para ingresar",
+              "value": 61.54,
+              "n": 26,
+              "unit": "pts",
+              "previous": 64.97,
+              "compared_current": 61.54,
+              "delta": -3.43
+            },
+            {
+              "id": "ACA_AULAS_VIRTUALES",
+              "name": "Contenidos de las Aulas Virtuales",
+              "value": 66.3,
+              "n": 23,
+              "unit": "pts",
+              "previous": 70.12,
+              "compared_current": 66.3,
+              "delta": -3.82
+            },
+            {
+              "id": "ACA_SEAC_TAREAS",
+              "name": "SEAC · Tareas y trabajos",
+              "value": 67.31,
+              "n": 26,
+              "unit": "pts",
+              "previous": 66.42,
+              "compared_current": 67.31,
+              "delta": 0.89
+            },
+            {
+              "id": "ACA_PRACTICAS",
+              "name": "Prácticas académicas",
+              "value": 68.75,
+              "n": 20,
+              "unit": "pts",
+              "previous": 69.56,
+              "compared_current": 68.75,
+              "delta": -0.81
+            },
+            {
+              "id": "ACA_PLAN_ESTUDIOS",
+              "name": "Plan de estudios",
+              "value": 75.96,
+              "n": 26,
+              "unit": "pts",
+              "previous": 78.9,
+              "compared_current": 75.96,
+              "delta": -2.94
+            },
+            {
+              "id": "ACA_CLASES_PRESENCIALES",
+              "name": "Clases presenciales",
+              "value": 79.81,
+              "n": 26,
+              "unit": "pts",
+              "previous": 81.83,
+              "compared_current": 79.81,
+              "delta": -2.02
+            },
+            {
+              "id": "ACA_PROFESORES",
+              "name": "Profesores / Asesores",
+              "value": 80.77,
+              "n": 26,
+              "unit": "pts",
+              "previous": 80.17,
+              "compared_current": 80.77,
+              "delta": 0.6
+            }
+          ]
+        },
+        {
+          "id": "facilities",
+          "name": "Instalaciones y equipo tecnológico",
+          "index": 55.09,
+          "responses": 221,
+          "surveys": 27,
+          "history": [
+            60.77,
+            55.09
+          ],
+          "criteria": [
+            {
+              "id": "INS_BIBLIOTECA",
+              "name": "Biblioteca",
+              "value": 50.0,
+              "n": 14,
+              "unit": "pts",
+              "previous": 56.13,
+              "compared_current": 50.0,
+              "delta": -6.13
+            },
+            {
+              "id": "INS_CAFETERIA",
+              "name": "Cafetería",
+              "value": 50.0,
+              "n": 24,
+              "unit": "pts",
+              "previous": 57.37,
+              "compared_current": 50.0,
+              "delta": -7.37
+            },
+            {
+              "id": "INS_LAB_COMPUTO",
+              "name": "Laboratorio de cómputo",
+              "value": 53.12,
+              "n": 8,
+              "unit": "pts",
+              "previous": 60.27,
+              "compared_current": 53.12,
+              "delta": -7.15
+            },
+            {
+              "id": "INS_AIRE_LIBRE",
+              "name": "Espacios al aire libre",
+              "value": 53.41,
+              "n": 22,
+              "unit": "pts",
+              "previous": 52.59,
+              "compared_current": 53.41,
+              "delta": 0.82
+            },
+            {
+              "id": "INS_WIFI",
+              "name": "WiFi para estudiantes",
+              "value": 53.85,
+              "n": 26,
+              "unit": "pts",
+              "previous": 53.22,
+              "compared_current": 53.85,
+              "delta": 0.63
+            },
+            {
+              "id": "INS_SANITARIOS",
+              "name": "Sanitarios",
+              "value": 54.63,
+              "n": 27,
+              "unit": "pts",
+              "previous": 62.13,
+              "compared_current": 54.63,
+              "delta": -7.5
+            },
+            {
+              "id": "INS_HYFLEX",
+              "name": "Equipo didáctico HyFlex",
+              "value": 55.21,
+              "n": 24,
+              "unit": "pts",
+              "previous": 65.99,
+              "compared_current": 55.21,
+              "delta": -10.78
+            },
+            {
+              "id": "INS_SALONES",
+              "name": "Salones de clase",
+              "value": 59.26,
+              "n": 27,
+              "unit": "pts",
+              "previous": 67.35,
+              "compared_current": 59.26,
+              "delta": -8.09
+            },
+            {
+              "id": "INS_ESPECIFICAS",
+              "name": "Instalaciones específicas para el aprendizaje",
+              "value": 60.42,
+              "n": 24,
+              "unit": "pts",
+              "previous": 67.47,
+              "compared_current": 60.42,
+              "delta": -7.05
+            },
+            {
+              "id": "INS_PLANTEL",
+              "name": "Instalaciones del plantel",
+              "value": 61.0,
+              "n": 25,
+              "unit": "pts",
+              "previous": 65.15,
+              "compared_current": 61.0,
+              "delta": -4.15
+            }
+          ]
+        },
+        {
+          "id": "environment",
+          "name": "Ambiente escolar",
+          "index": 81.25,
+          "responses": 80,
+          "surveys": 27,
+          "history": [
+            75.2,
+            81.25
+          ],
+          "criteria": [
+            {
+              "id": "AMB_REL_COMP",
+              "name": "Relación con compañeros",
+              "value": 80.56,
+              "n": 27,
+              "unit": "pts",
+              "previous": 73.37,
+              "compared_current": 80.56,
+              "delta": 7.19
+            },
+            {
+              "id": "AMB_AMBIENTE",
+              "name": "Ambiente escolar en mi servicio",
+              "value": 80.77,
+              "n": 26,
+              "unit": "pts",
+              "previous": 72.14,
+              "compared_current": 80.77,
+              "delta": 8.63
+            },
+            {
+              "id": "AMB_REL_PROF",
+              "name": "Relación con profesores / asesores",
+              "value": 82.41,
+              "n": 27,
+              "unit": "pts",
+              "previous": 80.09,
+              "compared_current": 82.41,
+              "delta": 2.32
+            }
+          ],
+          "incidence": {
+            "id": "AMB_PROBLEMA",
+            "name": "Incidencia reportada",
+            "value": 11.11,
+            "n": 27,
+            "unit": "pp",
+            "previous": 16.09,
+            "compared_current": 11.11,
+            "delta": -4.98,
+            "yes": 3,
+            "no": 24
+          }
+        },
+        {
+          "id": "satisfaction",
+          "name": "Satisfacción y recomendación",
+          "index": null,
+          "surveys": 27,
+          "history": null,
+          "criteria": [
+            {
+              "id": "SAT_GENERAL",
+              "name": "Satisfacción general",
+              "value": 63.89,
+              "n": 27,
+              "unit": "pts",
+              "previous": 67.67,
+              "compared_current": 63.89,
+              "delta": -3.78
+            },
+            {
+              "id": "REC_UDL",
+              "name": "Recomendación",
+              "value": 85.19,
+              "n": 27,
+              "unit": "pp",
+              "previous": 83.91,
+              "compared_current": 85.19,
+              "delta": 1.28
+            }
+          ]
+        },
+        {
+          "id": "languages",
+          "name": "Centro de Idiomas",
+          "index": null,
+          "responses": 24,
+          "surveys": 27,
+          "history": null,
+          "current_only": true,
+          "usage": {
+            "si": 8,
+            "no": 19,
+            "total_valido": 27,
+            "si_pct": 29.63,
+            "no_pct": 70.37
+          },
+          "criteria": [
+            {
+              "id": "IDI_SAT_OFICINA",
+              "name": "¿En general es satisfactorio para ti el servicio que te ofrecen en la oficina del Centro de Idiomas?",
+              "value": 81.25,
+              "n": 8,
+              "unit": "pts",
+              "previous": null,
+              "compared_current": null,
+              "delta": null
+            },
+            {
+              "id": "IDI_SAT_DOCENTE",
+              "name": "¿En general estás satisfecho con tu docente?",
+              "value": 81.25,
+              "n": 8,
+              "unit": "pts",
+              "previous": null,
+              "compared_current": null,
+              "delta": null
+            },
+            {
+              "id": "IDI_GUSTO_CLASE",
+              "name": "¿En general te gusta tu clase?",
+              "value": 84.38,
+              "n": 8,
+              "unit": "pts",
+              "previous": null,
+              "compared_current": null,
+              "delta": null
+            }
+          ],
+          "local_filters": {
+            "Idioma": "",
+            "Tipo de curso": ""
+          }
+        },
+        {
+          "id": "continuing",
+          "name": "Educación Continua",
+          "index": null,
+          "responses": 62,
+          "surveys": 27,
+          "history": null,
+          "current_only": true,
+          "usage": {
+            "si": 2,
+            "no": 25,
+            "total_valido": 27,
+            "si_pct": 7.41,
+            "no_pct": 92.59
+          },
+          "criteria": [
+            {
+              "id": "EC_CONOCE",
+              "name": "Conocimiento de cursos, talleres y diplomados",
+              "value": 18.52,
+              "n": 27,
+              "unit": "pp",
+              "previous": null,
+              "compared_current": null,
+              "delta": null
+            },
+            {
+              "id": "EC_SABE_DONDE",
+              "name": "Conocimiento de dónde consultar la oferta académica",
+              "value": 40.74,
+              "n": 27,
+              "unit": "pp",
+              "previous": null,
+              "compared_current": null,
+              "delta": null
+            },
+            {
+              "id": "EC_CALIDAD",
+              "name": "Calidad de cursos y diplomados",
+              "value": 87.5,
+              "n": 2,
+              "unit": "pts",
+              "previous": null,
+              "compared_current": null,
+              "delta": null
+            },
+            {
+              "id": "EC_HORARIOS",
+              "name": "Horarios y modalidades",
+              "value": 87.5,
+              "n": 2,
+              "unit": "pts",
+              "previous": null,
+              "compared_current": null,
+              "delta": null
+            },
+            {
+              "id": "EC_TEMAS",
+              "name": "Relevancia de los temas para la formación profesional",
+              "value": 87.5,
+              "n": 2,
+              "unit": "pts",
+              "previous": null,
+              "compared_current": null,
+              "delta": null
+            },
+            {
+              "id": "EC_RECOMIENDA",
+              "name": "Recomendación de programas de Educación Continua",
+              "value": 100.0,
+              "n": 2,
+              "unit": "pp",
+              "previous": null,
+              "compared_current": null,
+              "delta": null
+            }
+          ],
+          "local_filters": {
+            "Participación": ""
+          }
+        }
+      ]
+    }
+  ]
+}

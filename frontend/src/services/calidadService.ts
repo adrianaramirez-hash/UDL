@@ -177,6 +177,7 @@ export type CalidadDirectionComparisons = {
 }
 
 export type CalidadStaffComparisons = {
+  asignaciones?: CalidadStaffPersonByCareerModality[]
   por_carrera_base: CalidadStaffCareerBase[]
   por_carrera_modalidad: CalidadStaffCareerModality[]
   personas_por_carrera_modalidad: CalidadStaffPersonByCareerModality[]
@@ -287,6 +288,7 @@ const API_BASE_URL = "http://127.0.0.1:8000"
 
 export async function getCalidadSummary(
   filtros: CalidadFilterSelection = {},
+  signal?: AbortSignal,
 ): Promise<CalidadSummary> {
   const params = new URLSearchParams()
 
@@ -312,7 +314,7 @@ export async function getCalidadSummary(
     ? `${API_BASE_URL}/api/encuesta-calidad/preview/resumen?${query}`
     : `${API_BASE_URL}/api/encuesta-calidad/preview/resumen`
 
-  const response = await fetch(url)
+  const response = await fetch(url, { signal })
 
   if (!response.ok) {
     throw new Error(

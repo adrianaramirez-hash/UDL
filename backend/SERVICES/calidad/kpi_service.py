@@ -2299,6 +2299,30 @@ def calcular_kpis_preview(
     }
 
     comparativos_personal = {
+        # Assignment membership comes from the active catalog and confirmed
+        # mappings. Answer groups only supply the optional observed metrics.
+        "asignaciones": [
+            next((dict(observada) for observada in personas_carrera_modalidad
+                  if _clave_asignacion_personal(
+                      observada["carrera_base"], observada["modalidad_academica"],
+                      observada["persona_evaluada"], observada["rol_evaluado"])
+                  == _clave_asignacion_personal(
+                      fila.get("CARRERA_BASE"), fila.get("MODALIDAD_ACADEMICA"),
+                      fila.get("PERSONA_EVALUADA"), fila.get("ROL_EVALUADO"))), {
+                "seccion_id": "ESC_01_PERSONAL",
+                "carrera_base": fila.get("CARRERA_BASE", ""),
+                "modalidad_academica": fila.get("MODALIDAD_ACADEMICA", ""),
+                "persona_evaluada": fila.get("PERSONA_EVALUADA", ""),
+                "rol_evaluado": fila.get("ROL_EVALUADO", ""),
+                "indice": None, "preguntas_con_datos": 0, "evaluaciones": 0,
+            })
+            for fila in catalogo_personal
+            if fila.get("CARRERA_BASE") and fila.get("PERSONA_EVALUADA")
+            and (len(servicios_actuales) != 1 or (
+                _clave_texto_personal(fila.get("CARRERA_BASE")),
+                _clave_texto_personal(fila.get("MODALIDAD_ACADEMICA")),
+            ) in poblaciones_actuales)
+        ],
         "resumen": resumen_personal,
         "por_carrera_base": sorted(
             comparativo_carrera_base,
@@ -2769,6 +2793,13 @@ def calcular_kpis_preview(
         for carrera, modalidad, persona in catalogo_direccion_institucional
         if _modalidad_catalogo_aplica(modalidad)
     ]
+    # Active current catalog populations remain visible even with no answers.
+    # Historical responses never participate in constructing this universe.
+    catalogo_direccion_aplicable.extend(
+        (fila["CARRERA_BASE"], fila.get("MODALIDAD_ACADEMICA", ""), "")
+        for fila in catalogo_poblaciones_personal
+        if str(fila.get("CARRERA_BASE") or "").strip()
+    )
 
     # Cuando el endpoint está filtrado a un solo servicio, el catálogo
     # también se limita a esa población.

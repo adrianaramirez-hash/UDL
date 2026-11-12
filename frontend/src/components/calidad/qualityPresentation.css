@@ -1,0 +1,55 @@
+/* Presentation is scoped to this page; shared navigation and data flow stay intact. */
+.calidad-page main { min-width: 0; }
+.calidad-page h3, .calidad-page h4 { overflow-wrap: anywhere; }
+.calidad-page .calidad-global-summary { display: flex; flex-direction: column; gap: 1.25rem; padding: 1.5rem; scroll-margin-top: 5rem; }
+.calidad-page .calidad-global-summary > * { margin-block: 0; }
+.calidad-page .calidad-global-summary > .flex:has(select) { order: 1; }
+.calidad-page .text-3xl, .calidad-page .text-2xl,
+.calidad-page [role="meter"] { font-variant-numeric: tabular-nums; }
+.calidad-page section label:has(select) {
+  display: flex;
+  flex: 0 1 15rem;
+  min-width: 0;
+  flex-direction: column;
+  gap: .25rem;
+  font-size: .875rem;
+  color: var(--muted-foreground);
+}
+.calidad-page select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 2.5rem;
+  border-radius: .5rem;
+  padding: .5rem .75rem;
+  color: var(--foreground);
+}
+.calidad-page select:focus-visible, .calidad-page button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+.calidad-page section > .flex.flex-wrap:has(select) {
+  gap: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+.calidad-page aside[class*="max-w-"] { min-width: 0; }
+.calidad-page aside[class*="max-w-"] [class*="text-right"] { max-width: 100%; }
+.calidad-page .inline-flex:has(> button) { flex-shrink: 0; }
+.calidad-page .inline-flex > button { white-space: nowrap; }
+@media (min-width: 800px) and (max-width: 1023px) {
+  .calidad-page .grid.lg\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 1100px) {
+  .calidad-page main > div { padding-inline: 1.25rem; }
+  .calidad-page h1 { font-size: 2.25rem; line-height: 1.15; }
+  .calidad-page .calidad-global-summary { padding: 1.25rem; }
+}
+@media (max-width: 760px) {
+  .calidad-page main > div { padding-inline: 1rem; }
+  .calidad-page section, .calidad-page article { min-width: 0; }
+  .calidad-page main > div > .flex { flex-wrap: wrap; }
+  .calidad-page [class*="min-w-["] { min-width: 0; }
+  .calidad-page section label:has(select) { flex: 1 1 12rem; }
+  .calidad-page aside[class*="max-w-"] { max-width: 100%; }
+}

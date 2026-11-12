@@ -6,6 +6,7 @@ from gspread.exceptions import APIError
 from google.oauth2.service_account import Credentials
 
 from backend.CONFIG.settings import settings
+from backend.FUENTES.calidad.read_snapshot import active_snapshot, SnapshotHTTPClient
 
 
 SCOPES = [
@@ -23,11 +24,19 @@ def abrir_spreadsheet(
     Abre un Google Sheet con reintentos
     autom?ticos ante errores temporales 5xx.
     """
+    snapshot = active_snapshot()
+    key = (id(client), spreadsheet_id)
+    if snapshot is not None and key in snapshot.spreadsheets:
+        return snapshot.spreadsheets[key]
     for intento in range(1, reintentos + 1):
         try:
-            return client.open_by_key(
+            spreadsheet = client.open_by_key(
                 spreadsheet_id
             )
+            if snapshot is not None:
+                snapshot.spreadsheets[key] = spreadsheet
+                snapshot.opens += 1
+            return spreadsheet
         except APIError as error:
             codigo = getattr(
                 getattr(
@@ -56,6 +65,9 @@ def abrir_spreadsheet(
 
 
 def crear_cliente_google_sheets():
+    snapshot = active_snapshot()
+    if snapshot is not None and snapshot.client is not None:
+        return snapshot.client
     credentials_path = Path(
         settings.google_application_credentials
     )
@@ -74,7 +86,10 @@ def crear_cliente_google_sheets():
         scopes=SCOPES,
     )
 
-    return gspread.authorize(creds)
+    client = gspread.authorize(creds, http_client=SnapshotHTTPClient)
+    if snapshot is not None:
+        snapshot.client = client
+    return client
 
 
 def leer_encabezados(

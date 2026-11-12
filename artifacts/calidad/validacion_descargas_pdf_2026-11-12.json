@@ -1,0 +1,115 @@
+{
+  "date": "2026-11-12",
+  "source": "real Google Sheets through normal runtime cache; no validation capture",
+  "downloads": [
+    {
+      "case": "Global",
+      "attempt": 1,
+      "url": "http://127.0.0.1:8000/api/encuesta-calidad/informe-resultados.pdf?periodo=2026&modalidad=Escolarizadas",
+      "status": 200,
+      "headers": {
+        "date": "Thu, 12 Nov 2026 16:48:23 GMT",
+        "server": "uvicorn",
+        "content-disposition": "attachment; filename=\"Informe_de_resultados_Escolarizadas_2026_Todas_las_carreras_Todas_las_modalidades.pdf\"",
+        "cache-control": "no-store",
+        "x-pdf-sheets-reads": "16",
+        "x-pdf-snapshot": "22975a2da8eb",
+        "x-pdf-snapshot-cache": "MISS",
+        "x-pdf-result-cache": "MISS",
+        "content-length": "34488",
+        "content-type": "application/pdf",
+        "Connection": "close"
+      },
+      "pages": 14,
+      "sha256": "47e5c3e46ff670cb614a515d1a51f0d1fdb11d1873a1db194a1af402a2ccfd6e",
+      "seconds": 15.61
+    },
+    {
+      "case": "Global",
+      "attempt": 2,
+      "url": "http://127.0.0.1:8000/api/encuesta-calidad/informe-resultados.pdf?periodo=2026&modalidad=Escolarizadas",
+      "status": 200,
+      "headers": {
+        "date": "Thu, 12 Nov 2026 16:48:38 GMT",
+        "server": "uvicorn",
+        "content-disposition": "attachment; filename=\"Informe_de_resultados_Escolarizadas_2026_Todas_las_carreras_Todas_las_modalidades.pdf\"",
+        "cache-control": "no-store",
+        "x-pdf-sheets-reads": "0",
+        "x-pdf-snapshot": "22975a2da8eb",
+        "x-pdf-snapshot-cache": "HIT",
+        "x-pdf-result-cache": "HIT",
+        "content-length": "34488",
+        "content-type": "application/pdf",
+        "Connection": "close"
+      },
+      "pages": 14,
+      "sha256": "47e5c3e46ff670cb614a515d1a51f0d1fdb11d1873a1db194a1af402a2ccfd6e",
+      "seconds": 0.05
+    },
+    {
+      "case": "Derecho_Presencial",
+      "attempt": 1,
+      "url": "http://127.0.0.1:8000/api/encuesta-calidad/informe-resultados.pdf?periodo=2026&modalidad=Escolarizadas&carrera=Derecho&modalidad_academica=Presencial",
+      "status": 200,
+      "headers": {
+        "date": "Thu, 12 Nov 2026 16:48:38 GMT",
+        "server": "uvicorn",
+        "content-disposition": "attachment; filename=\"Informe_de_resultados_Escolarizadas_2026_Derecho_Presencial.pdf\"",
+        "cache-control": "no-store",
+        "x-pdf-sheets-reads": "0",
+        "x-pdf-snapshot": "22975a2da8eb",
+        "x-pdf-snapshot-cache": "HIT",
+        "x-pdf-result-cache": "MISS",
+        "content-length": "27775",
+        "content-type": "application/pdf",
+        "Connection": "close"
+      },
+      "pages": 11,
+      "sha256": "15b2693cd8f5999e6f63666508ac37cc698b9740670ee0416dbd2fe662424944",
+      "seconds": 0.7
+    },
+    {
+      "case": "Derecho_Presencial",
+      "attempt": 2,
+      "url": "http://127.0.0.1:8000/api/encuesta-calidad/informe-resultados.pdf?periodo=2026&modalidad=Escolarizadas&carrera=Derecho&modalidad_academica=Presencial",
+      "status": 200,
+      "headers": {
+        "date": "Thu, 12 Nov 2026 16:48:39 GMT",
+        "server": "uvicorn",
+        "content-disposition": "attachment; filename=\"Informe_de_resultados_Escolarizadas_2026_Derecho_Presencial.pdf\"",
+        "cache-control": "no-store",
+        "x-pdf-sheets-reads": "0",
+        "x-pdf-snapshot": "22975a2da8eb",
+        "x-pdf-snapshot-cache": "HIT",
+        "x-pdf-result-cache": "HIT",
+        "content-length": "27775",
+        "content-type": "application/pdf",
+        "Connection": "close"
+      },
+      "pages": 11,
+      "sha256": "15b2693cd8f5999e6f63666508ac37cc698b9740670ee0416dbd2fe662424944",
+      "seconds": 0.03
+    }
+  ],
+  "cold_independent_cases": {
+    "Global": {
+      "status": 200,
+      "sheets_requests": 16
+    },
+    "Derecho_Presencial": {
+      "status": 200,
+      "sheets_requests": 16
+    }
+  },
+  "protected_files_verified_by_sha256": true,
+  "pdf_comparison": "All page text and figures match approved artifacts except Servicio institucional 09 resolved to Paramedico by existing header helper. Renderer unchanged.",
+  "original_failure": {
+    "class": "gspread.exceptions.APIError",
+    "status": 429,
+    "measured_requests_until_failure": 40,
+    "metadata_requests": 26,
+    "values_requests": 14,
+    "source": "ESC_2025_ARCHIVE",
+    "range": "A2:BK1755"
+  }
+}
