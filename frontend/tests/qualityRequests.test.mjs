@@ -32,7 +32,7 @@ test('Histórico vacío conserva carrera y modalidad y nunca consulta global', a
   for(const task of h.pending) task.resolve(response({encuestas:0,preguntas:[]}))
   await settle()
   assert.equal(h.calls.length,2)
-  for(const call of h.calls){const url=new URL(call.url);assert.equal(url.searchParams.get('servicio'),'Derecho');assert.equal(url.searchParams.get('modalidad'),'Presencial')}
+  for(const call of h.calls){const url=new URL(call.url, 'http://localhost');assert.equal(url.searchParams.get('servicio'),'Derecho');assert.equal(url.searchParams.get('modalidad'),'Presencial')}
   assert.equal(h.state.HistoryStatus,'ready');assert.equal(h.state.Historico2025.encuestas,0)
 })
 test('Respuesta actual tardía no sobrescribe el filtro vigente aunque el transporte ignore abort', async () => {
@@ -65,7 +65,7 @@ test('Fallo histórico obsoleto no cambia el estado listo vigente', async () => 
 })
 test('Quitar filtros consulta global explícitamente sin recuperar la población anterior', async () => {
   const h=harness();h.run(1,{servicio:'Derecho',modalidad:'Presencial'})();h.run(1,{})
-  for(const call of h.calls.slice(2)){const url=new URL(call.url);assert.equal(url.searchParams.has('servicio'),false);assert.equal(url.searchParams.has('modalidad'),false)}
+  for(const call of h.calls.slice(2)){const url=new URL(call.url, 'http://localhost');assert.equal(url.searchParams.has('servicio'),false);assert.equal(url.searchParams.has('modalidad'),false)}
   h.pending.forEach(task=>task.resolve(response({encuestas:1})));await settle();assert.equal(h.state.HistoryStatus,'ready')
 })
 test('Detalles no muestran conclusiones o clasificaciones heurísticas', () => {

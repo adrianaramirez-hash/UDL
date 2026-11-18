@@ -3,13 +3,15 @@ import re
 import unicodedata
 import logging
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Response, Depends
+from backend.GATEWAY.quality_access import require_quality
 from gspread.exceptions import APIError
+from backend.CORE.auth.quality_scope import quality_scope
 from backend.SERVICES.calidad.results_report_source import source_snapshot, select_service
 from backend.SERVICES.calidad.results_report import prepare_report
 from backend.SERVICES.calidad.results_report_pdf import render_report
 
-router = APIRouter(prefix="/api/encuesta-calidad", tags=["Informe de resultados PDF"])
+router = APIRouter(dependencies=[Depends(require_quality)], prefix="/api/encuesta-calidad", tags=["Informe de resultados PDF"])
 logger = logging.getLogger(__name__)
 
 
@@ -18,17 +20,37 @@ def download_report(periodo: str = "2026", modalidad: str = "Escolarizadas", ser
     if periodo != "2026" or modalidad != "Escolarizadas":
         raise HTTPException(status_code=400, detail="El informe de nueve módulos corresponde a Escolarizadas, instrumento 2026.")
     try:
+        scope = quality_scope.get()
         with source_snapshot(periodo, modalidad) as access:
             snapshot = access.snapshot
             result_key = (periodo, modalidad, servicio, carrera, modalidad_academica, idioma, tipo_curso, participacion)
+            result_key = (scope.cache_key if scope else ("global",), *result_key)
             result_hit = result_key in snapshot.results
             if result_hit:
                 pdf, slug = snapshot.results[result_key]
             else:
-                now, now_map = select_service(snapshot.current, servicio)
-                old, old_map = select_service(snapshot.historical, servicio)
-                model = prepare_report(now, now_map, old, old_map, career=carrera, modality=modalidad_academica,
-                                       source=modalidad, service=servicio, language=idioma, course=tipo_curso, participation=participacion)
+                if scope:
+                    now, now_map = snapshot.current
+                    old, old_map = snapshot.historical
+                    now, old = scope.select(now), scope.select(old)
+                    if not now and not old:
+                        raise HTTPException(403, "Acceso no autorizado")
+                    # Both years have already been restricted. Keep the selected
+                    # labels without applying a second, current-year-only filter.
+                    model = prepare_report(now, now_map, old, old_map, source=modalidad,
+                                           language=idioma, course=tipo_curso, participation=participacion)
+                    rows = now + old
+                    careers = sorted({row["CARRERA_BASE"] for row in rows if row.get("CARRERA_BASE")})
+                    modalities = sorted({row.get("MODALIDAD_ACADEMICA") or row.get("MODALIDAD_DETALLE")
+                                         for row in rows} - {"", None})
+                    model["career"] = carrera or ", ".join(careers) or "Servicios asignados"
+                    model["modality"] = modalidad_academica or ", ".join(modalities) or "Modalidades asignadas"
+                    model["service"] = servicio
+                else:
+                    now, now_map = select_service(snapshot.current, servicio)
+                    old, old_map = select_service(snapshot.historical, servicio)
+                    model = prepare_report(now, now_map, old, old_map, career=carrera, modality=modalidad_academica,
+                                           source=modalidad, service=servicio, language=idioma, course=tipo_curso, participation=participacion)
                 pdf = render_report(model)
                 slug = unicodedata.normalize("NFD", f"{model['career']}_{model['modality']}")
                 slug = re.sub(r"[^a-zA-Z0-9]+", "_", "".join(c for c in slug if not unicodedata.combining(c))).strip("_")
@@ -45,5 +67,5 @@ def download_report(periodo: str = "2026", modalidad: str = "Escolarizadas", ser
     return Response(pdf, media_type="application/pdf", headers={
         "Content-Disposition": f'attachment; filename="Informe_de_resultados_Escolarizadas_2026_{slug}.pdf"',
         "Cache-Control": "no-store",
-        **diagnostics,
+        **({} if scope else diagnostics),
     })

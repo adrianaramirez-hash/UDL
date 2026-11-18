@@ -16,7 +16,6 @@ type ObservationInsights = {
   recomendaciones: string[]
 }
 
-const API_BASE_URL = "http://127.0.0.1:8000"
 
 export function ObservationAIAdvisor({
   filters,
@@ -61,7 +60,7 @@ export function ObservationAIAdvisor({
         const query = params.toString()
 
         const response = await fetch(
-          `${API_BASE_URL}/api/observacion/insights${
+          `/api/observacion/insights${
             query ? `?${query}` : ""
           }`,
         )

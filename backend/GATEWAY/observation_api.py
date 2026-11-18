@@ -1,7 +1,12 @@
+from dataclasses import dataclass
+from typing import Annotated
+
 import pandas as pd
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
+from backend.CORE.auth.quality_scope import service_key
+from backend.GATEWAY.auth_api import DENIED, Principal, require_observation
 from backend.MODELS.observation.chat import (
     ObservationChatRequest,
     ObservationChatResponse,
@@ -11,6 +16,8 @@ from backend.REPOSITORIES.observation.observation_repository import (
     ObservationRepository,
 )
 from backend.SERVICES.observation.observation_chat import (
+    _detectar_docente,
+    _detectar_valor_columna,
     responder_pregunta_observacion,
 )
 from backend.SERVICES.observation.observation_insights import (
@@ -44,9 +51,90 @@ from backend.SERVICES.observation.observation_executive_pdf import (
 router = APIRouter(
     prefix="/api/observacion",
     tags=["Observación de Clases"],
+    dependencies=[Depends(require_observation)],
 )
 
 repository = ObservationRepository()
+SERVICE_COLUMN = "Indica el servicio"
+TEACHER_COLUMN = "Nombre del docente"
+
+
+@dataclass(frozen=True)
+class ObservationData:
+    rows: pd.DataFrame
+    cuts: pd.DataFrame
+    restricted: bool = False
+    services: frozenset[str] = frozenset()
+    chat_catalog: pd.DataFrame | None = None
+
+    def service_filter(self, requested: str | None) -> str | None:
+        # An assigned account has already been restricted by service.
+        return None if self.restricted else requested
+
+    def authorize_teacher(self, name: str) -> None:
+        if self.restricted and (
+            TEACHER_COLUMN not in self.rows.columns
+            or not self.rows[TEACHER_COLUMN].astype(str).str.strip().eq(name.strip()).any()
+        ):
+            raise HTTPException(403, DENIED)
+
+    def authorize_chat(self, payload: ObservationChatRequest) -> None:
+        if not self.restricted or self.chat_catalog is None:
+            return
+        context = payload.contexto
+        if context.get("alcance", "asignado") != "asignado":
+            raise HTTPException(403, DENIED)
+        service = _detectar_valor_columna(self.chat_catalog, payload.pregunta, [SERVICE_COLUMN])
+        for requested in (service, context.get("ultimo_servicio")):
+            if requested and service_key(requested) not in self.services:
+                raise HTTPException(403, DENIED)
+        if teacher := context.get("ultimo_docente"):
+            self.authorize_teacher(str(teacher))
+        teacher, matches = _detectar_docente(self.chat_catalog, payload.pregunta)
+        if teacher:
+            self.authorize_teacher(teacher)
+        elif matches:
+            teachers = set(self.rows[TEACHER_COLUMN].astype(str).str.strip())
+            if not any(match["docente"] in teachers for match in matches):
+                raise HTTPException(403, DENIED)
+
+
+def load_observation_data(
+    request: Request, principal: Principal = Depends(require_observation),
+) -> ObservationData:
+    if principal.grants.role == "DG":
+        responses, cuts = repository.obtener_datos()
+        return ObservationData(preparar_observaciones(responses, cuts), cuts)
+    if principal.grants.role != "DC":
+        raise HTTPException(403, DENIED)
+
+    services = frozenset(filter(None, map(service_key, principal.grants.services)))
+    params = request.query_params
+    if (not services or params.get("alcance", "asignado") != "asignado" or "global" in params
+            or any(len(params.getlist(key)) > 1 for key in ("servicio", "carrera", "alcance"))):
+        raise HTTPException(403, DENIED)
+    for key in ("servicio", "carrera"):
+        if key in params:
+            requested = service_key(params[key])
+            if requested not in services:
+                raise HTTPException(403, DENIED)
+            services = frozenset({requested})
+
+    responses, cuts = repository.obtener_datos()
+    responses = responses.rename(columns=str.strip)
+    if list(responses.columns).count(SERVICE_COLUMN) != 1:
+        raise HTTPException(503, "No se pudo determinar el servicio de Observación")
+    rows = preparar_observaciones(responses[responses[SERVICE_COLUMN].fillna("").map(service_key).isin(services)], cuts)
+    cuts = cuts.rename(columns=str.strip)
+    if "Corte" in cuts.columns:
+        cuts = cuts[cuts["Corte"].astype(str).str.strip().isin(rows["Corte"])]
+    catalog = None
+    if request.url.path.endswith("/chat"):
+        catalog = responses[[column for column in (SERVICE_COLUMN, TEACHER_COLUMN) if column in responses.columns]]
+    return ObservationData(rows, cuts, restricted=True, services=services, chat_catalog=catalog)
+
+
+ScopedData = Annotated[ObservationData, Depends(load_observation_data)]
 
 
 def aplicar_filtros(
@@ -95,13 +183,8 @@ def aplicar_filtros(
 
 
 @router.get("/filtros")
-def obtener_filtros():
-    df_respuestas, df_cortes = repository.obtener_datos()
-
-    df = preparar_observaciones(
-        df_respuestas,
-        df_cortes,
-    )
+def obtener_filtros(data: ScopedData):
+    df, df_cortes = data.rows, data.cuts
 
     cortes = []
 
@@ -185,19 +268,15 @@ def obtener_filtros():
 
 @router.get("/tendencia")
 def obtener_tendencia(
+    data: ScopedData,
     servicio: str | None = Query(default=None),
     tipo: str | None = Query(default=None),
 ):
-    df_respuestas, df_cortes = repository.obtener_datos()
-
-    df = preparar_observaciones(
-        df_respuestas,
-        df_cortes,
-    )
+    df, df_cortes = data.rows, data.cuts
 
     df = aplicar_filtros(
         df,
-        servicio=servicio,
+        servicio=data.service_filter(servicio),
         tipo=tipo,
     )
 
@@ -209,21 +288,17 @@ def obtener_tendencia(
 
 @router.get("/casos-prioritarios")
 def obtener_prioritarios(
+    data: ScopedData,
     corte: str | None = Query(default=None),
     servicio: str | None = Query(default=None),
     tipo: str | None = Query(default=None),
 ):
-    df_respuestas, df_cortes = repository.obtener_datos()
-
-    df = preparar_observaciones(
-        df_respuestas,
-        df_cortes,
-    )
+    df = data.rows
 
     df = aplicar_filtros(
         df,
         corte=corte,
-        servicio=servicio,
+        servicio=data.service_filter(servicio),
         tipo=tipo,
     )
 
@@ -232,21 +307,17 @@ def obtener_prioritarios(
 
 @router.get("/insights")
 def obtener_insights(
+    data: ScopedData,
     corte: str | None = Query(default=None),
     servicio: str | None = Query(default=None),
     tipo: str | None = Query(default=None),
 ):
-    df_respuestas, df_cortes = repository.obtener_datos()
-
-    df = preparar_observaciones(
-        df_respuestas,
-        df_cortes,
-    )
+    df, df_cortes = data.rows, data.cuts
 
     df = aplicar_filtros(
         df,
         corte=corte,
-        servicio=servicio,
+        servicio=data.service_filter(servicio),
         tipo=tipo,
     )
 
@@ -263,6 +334,7 @@ def obtener_insights(
 
 @router.get("/consulta")
 def consultar_observaciones(
+    data: ScopedData,
     docente: str | None = Query(default=None),
     servicio: str | None = Query(default=None),
     materia: str | None = Query(default=None),
@@ -270,17 +342,14 @@ def consultar_observaciones(
     tipo: str | None = Query(default=None),
     clasificacion: str | None = Query(default=None),
 ):
-    df_respuestas, df_cortes = repository.obtener_datos()
+    df = data.rows
 
-    df = preparar_observaciones(
-        df_respuestas,
-        df_cortes,
-    )
-
+    if data.restricted and docente is not None and not buscar_docentes(df, docente):
+        raise HTTPException(403, DENIED)
     return obtener_contexto_consulta(
         df=df,
         docente=docente,
-        servicio=servicio,
+        servicio=data.service_filter(servicio),
         materia=materia,
         corte=corte,
         tipo=tipo,
@@ -290,19 +359,15 @@ def consultar_observaciones(
 
 @router.get("/buscar-docentes")
 def consultar_docentes(
+    data: ScopedData,
     nombre: str = Query(..., min_length=1),
 ):
-    df_respuestas, df_cortes = repository.obtener_datos()
+    df = data.rows
 
-    df = preparar_observaciones(
-        df_respuestas,
-        df_cortes,
-    )
-
-    return buscar_docentes(
-        df,
-        nombre,
-    )
+    matches = buscar_docentes(df, nombre)
+    if data.restricted and not matches:
+        raise HTTPException(403, DENIED)
+    return matches
 
 
 @router.post(
@@ -310,15 +375,12 @@ def consultar_docentes(
     response_model=ObservationChatResponse,
 )
 def conversar_observacion(
+    data: ScopedData,
     payload: ObservationChatRequest,
 ):
-    df_respuestas, df_cortes = repository.obtener_datos()
+    df = data.rows
 
-    df = preparar_observaciones(
-        df_respuestas,
-        df_cortes,
-    )
-
+    data.authorize_chat(payload)
     resultado = responder_pregunta_observacion(
         df,
         payload.pregunta,
@@ -351,22 +413,19 @@ def conversar_observacion(
 
 @router.get("/docente/{nombre_docente}/pdf")
 def exportar_pdf_docente(
+    data: ScopedData,
     nombre_docente: str,
     corte: str | None = Query(default=None),
     servicio: str | None = Query(default=None),
     tipo: str | None = Query(default=None),
 ):
-    df_respuestas, df_cortes = repository.obtener_datos()
+    df = data.rows
 
-    df = preparar_observaciones(
-        df_respuestas,
-        df_cortes,
-    )
-
+    data.authorize_teacher(nombre_docente)
     df = aplicar_filtros(
         df,
         corte=corte,
-        servicio=servicio,
+        servicio=data.service_filter(servicio),
         tipo=tipo,
     )
 
@@ -402,22 +461,19 @@ def exportar_pdf_docente(
 
 @router.get("/docente/{nombre_docente}")
 def obtener_docente(
+    data: ScopedData,
     nombre_docente: str,
     corte: str | None = Query(default=None),
     servicio: str | None = Query(default=None),
     tipo: str | None = Query(default=None),
 ):
-    df_respuestas, df_cortes = repository.obtener_datos()
+    df = data.rows
 
-    df = preparar_observaciones(
-        df_respuestas,
-        df_cortes,
-    )
-
+    data.authorize_teacher(nombre_docente)
     df = aplicar_filtros(
         df,
         corte=corte,
-        servicio=servicio,
+        servicio=data.service_filter(servicio),
         tipo=tipo,
     )
 
@@ -428,21 +484,17 @@ def obtener_docente(
 
 @router.get("/reporte-ejecutivo/pdf")
 def exportar_reporte_ejecutivo(
+    data: ScopedData,
     corte: str | None = Query(default=None),
     servicio: str | None = Query(default=None),
     tipo: str | None = Query(default=None),
 ):
-    df_respuestas, df_cortes = repository.obtener_datos()
-
-    df = preparar_observaciones(
-        df_respuestas,
-        df_cortes,
-    )
+    df, df_cortes = data.rows, data.cuts
 
     df_filtrado = aplicar_filtros(
         df,
         corte=corte,
-        servicio=servicio,
+        servicio=data.service_filter(servicio),
         tipo=tipo,
     )
 
@@ -473,7 +525,7 @@ def exportar_reporte_ejecutivo(
         "servicio": (
             servicio
             if servicio
-            else "Todos los servicios"
+            else ("Servicios asignados" if data.restricted else "Todos los servicios")
         ),
         "tipo": (
             tipo
@@ -506,21 +558,17 @@ def exportar_reporte_ejecutivo(
     response_model=ObservationSummary,
 )
 def obtener_resumen(
+    data: ScopedData,
     corte: str | None = Query(default=None),
     servicio: str | None = Query(default=None),
     tipo: str | None = Query(default=None),
 ):
-    df_respuestas, df_cortes = repository.obtener_datos()
-
-    df = preparar_observaciones(
-        df_respuestas,
-        df_cortes,
-    )
+    df = data.rows
 
     df = aplicar_filtros(
         df,
         corte=corte,
-        servicio=servicio,
+        servicio=data.service_filter(servicio),
         tipo=tipo,
     )
 

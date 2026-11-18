@@ -1,3 +1,4 @@
+import { useAuth } from "@/auth/session";
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Hero } from "@/components/dashboard/Hero";
@@ -6,6 +7,13 @@ import { QuestionGrid } from "@/components/dashboard/QuestionGrid";
 import { KPIGrid } from "@/components/dashboard/KPIGrid";
 
 export default function Dashboard() {
+  const { session } = useAuth();
+  const showInstitutionalHome =
+    session.status === "authenticated" &&
+    session.user.rol === "DG" &&
+    session.user.alcance.tipo === "global" &&
+    session.user.permisos.includes("encuesta_calidad.ver_global");
+
   return (
     <div className="flex min-h-screen bg-background">
       <Sidebar />
@@ -14,10 +22,14 @@ export default function Dashboard() {
         <Header />
 
         <div className="mx-auto w-full max-w-7xl px-8 py-8">
-            <Hero />
-            <AIAdvisor />
-            <KPIGrid />
-            <QuestionGrid />
+          <Hero institutional={showInstitutionalHome} />
+          {showInstitutionalHome && (
+            <>
+              <AIAdvisor />
+              <KPIGrid />
+            </>
+          )}
+          <QuestionGrid />
         </div>
       </main>
     </div>

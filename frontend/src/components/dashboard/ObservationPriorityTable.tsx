@@ -46,7 +46,6 @@ type ObservationPriorityTableProps = {
   ) => void
 }
 
-const API_BASE_URL = "http://127.0.0.1:8000"
 
 export function ObservationPriorityTable({
   filters,
@@ -98,7 +97,7 @@ export function ObservationPriorityTable({
         const query = params.toString()
 
         const response = await fetch(
-          `${API_BASE_URL}/api/observacion/casos-prioritarios${
+          `/api/observacion/casos-prioritarios${
             query ? `?${query}` : ""
           }`,
         )
@@ -173,7 +172,7 @@ export function ObservationPriorityTable({
       const query = params.toString()
 
       const response = await fetch(
-        `${API_BASE_URL}/api/observacion/docente/${encodeURIComponent(
+        `/api/observacion/docente/${encodeURIComponent(
           nombreDocente.trim(),
         )}${query ? `?${query}` : ""}`,
       )
@@ -233,7 +232,7 @@ export function ObservationPriorityTable({
       const query = params.toString()
 
       const response = await fetch(
-        `${API_BASE_URL}/api/observacion/docente/${encodeURIComponent(
+        `/api/observacion/docente/${encodeURIComponent(
           selectedTeacher.docente.trim(),
         )}/pdf${query ? `?${query}` : ""}`,
       )

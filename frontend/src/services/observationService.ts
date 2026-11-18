@@ -19,7 +19,6 @@ export type ObservationFilterOptions = {
   tipos: string[]
 }
 
-const API_BASE_URL = "http://127.0.0.1:8000"
 
 export async function getObservationSummary(
   filters: ObservationFilters = {},
@@ -50,7 +49,7 @@ export async function getObservationSummary(
   const query = params.toString()
 
   const response = await fetch(
-    `${API_BASE_URL}/api/observacion/resumen${
+    `/api/observacion/resumen${
       query ? `?${query}` : ""
     }`,
   )
@@ -66,7 +65,7 @@ export async function getObservationSummary(
 
 export async function getObservationFilters(): Promise<ObservationFilterOptions> {
   const response = await fetch(
-    `${API_BASE_URL}/api/observacion/filtros`,
+    `/api/observacion/filtros`,
   )
 
   if (!response.ok) {

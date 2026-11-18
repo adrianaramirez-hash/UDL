@@ -85,7 +85,7 @@ test("Comentarios permanecen fuera de la vista global", () => {
 test("El cliente mantiene los mismos filtros de carrera y modalidad en ambos años", async () => {
   const original = globalThis.fetch
   const urls = []
-  globalThis.fetch = async url => { urls.push(new URL(url)); return { ok: true, json: async () => ({}) } }
+  globalThis.fetch = async url => { urls.push(new URL(url, 'http://localhost')); return { ok: true, json: async () => ({}) } }
   try {
     const scope = { periodo: "2026", modalidad: "Escolarizadas", servicio: "Programa vigente", carrera: "Derecho", modalidad_academica: "Presencial" }
     await fetchFacilities("actual", scope)

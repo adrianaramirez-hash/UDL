@@ -21,7 +21,7 @@ export type ContinuingCurrent = {
 export async function fetchContinuingEducation(scope: ContinuingScope, signal?: AbortSignal): Promise<ContinuingCurrent> {
   const params = new URLSearchParams()
   for (const [key, value] of Object.entries(scope)) if (value) params.set(key, value)
-  const response = await fetch(`http://127.0.0.1:8000/api/encuesta-calidad/educacion-continua/actual?${params}`, { signal })
+  const response = await fetch(`/api/encuesta-calidad/educacion-continua/actual?${params}`, { signal })
   if (!response.ok) {
     const body = await response.json().catch(() => null)
     throw new Error(typeof body?.detail === "string" ? body.detail : "No fue posible cargar Educación Continua")

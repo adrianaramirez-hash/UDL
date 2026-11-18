@@ -94,7 +94,7 @@ test("Motivos no aparecen en la vista global ni se clasifican", () => {
 
 test("El cliente envía exactamente la misma población a actual e histórico", async () => {
   const original = globalThis.fetch, urls = []
-  globalThis.fetch = async url => { urls.push(new URL(url)); return { ok: true, json: async () => ({}) } }
+  globalThis.fetch = async url => { urls.push(new URL(url, 'http://localhost')); return { ok: true, json: async () => ({}) } }
   try {
     const scope = { periodo: "2026", modalidad: "Escolarizadas", servicio: "Programa vigente", carrera: "Derecho", modalidad_academica: "Presencial" }
     await fetchSatisfaction("actual", scope)

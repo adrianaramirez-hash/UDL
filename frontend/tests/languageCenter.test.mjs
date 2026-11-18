@@ -81,7 +81,7 @@ test("Profesor y comentarios quedan en detalle, sin clasificaciones ni ranking g
 
 test("El cliente envía filtros opcionales y no solicita histórico", async () => {
   const original = globalThis.fetch, urls = []
-  globalThis.fetch = async url => { urls.push(new URL(url)); return { ok: true, json: async () => ({}) } }
+  globalThis.fetch = async url => { urls.push(new URL(url, 'http://localhost')); return { ok: true, json: async () => ({}) } }
   try {
     const scope = { periodo: "2026", modalidad: "Escolarizadas", servicio: "Programa", carrera: "Derecho", modalidad_academica: "Presencial", idioma: "Inglés", tipo_curso: "Intensivo" }
     await fetchLanguageCenter(scope)

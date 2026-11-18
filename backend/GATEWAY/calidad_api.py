@@ -1,7 +1,11 @@
 import threading
 import time
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+
+from backend.CORE.auth.policy import QUALITY_COMMENTS, QUALITY_EXPORT
+from backend.CORE.auth.quality_scope import quality_has, quality_scope
+from backend.GATEWAY.quality_access import require_quality
 
 from backend.FUENTES.calidad.google_sheets import (
     leer_filas,
@@ -26,6 +30,7 @@ from backend.SERVICES.calidad.structure_validator import (
 router = APIRouter(
     prefix="/api/encuesta-calidad",
     tags=["Encuesta de Calidad"],
+    dependencies=[Depends(require_quality)],
 )
 
 repository = CalidadRepository()
@@ -474,12 +479,14 @@ def obtener_resumen_preview(
         periodo_seleccionado,
     )
 
-    registros = base["registros"]
-    qa = base["qa"]
+    scope = quality_scope.get()
+    registros = scope.select(base["registros"]) if scope else base["registros"]
+    show_diagnostics = scope is None and quality_has(QUALITY_EXPORT) and quality_has(QUALITY_COMMENTS)
+    qa = base["qa"] if show_diagnostics else []
 
     registros_filtrados = registros
 
-    if servicio and servicio.strip():
+    if scope is None and servicio and servicio.strip():
         servicio_limpio = (
             _normalizar_servicio_filtro(
                 servicio
@@ -502,6 +509,8 @@ def obtener_resumen_preview(
         registros_filtrados,
         solo_comparables_historico=historico,
     )
+    if not quality_has(QUALITY_EXPORT):
+        kpis.pop("respuestas_export", None)
 
     secciones_kpi = {
         seccion["seccion_id"]: seccion
@@ -595,8 +604,8 @@ def obtener_resumen_preview(
         **kpis,
         "qa": qa,
         "qa_total": len(qa),
-        "fila_inicio": base["fila_inicio"],
-        "fila_fin": base["fila_fin"],
+        "fila_inicio": base["fila_inicio"] if show_diagnostics else 0,
+        "fila_fin": base["fila_fin"] if show_diagnostics else 0,
         "fuente_id": base["fuente_id"],
         "periodo_id": base["periodo_id"],
         "version_instrumento": base[
@@ -604,7 +613,7 @@ def obtener_resumen_preview(
         ],
         "filtros": {
             "periodos": ["2025", "2026"],
-            "modalidades": modalidades,
+            "modalidades": [modalidad_seleccionada] if scope else modalidades,
             "servicios": servicios,
             "seleccion": {
                 "periodo": periodo_seleccionado,

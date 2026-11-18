@@ -30,7 +30,6 @@ type ObservationTeacherDetailProps = {
 
 type TabKey = "resumen" | "historial" | "comentarios"
 
-const API_BASE_URL = "http://127.0.0.1:8000"
 
 const tabs: { key: TabKey; label: string }[] = [
   {
@@ -58,7 +57,7 @@ export function ObservationTeacherDetail({
       setExporting(true)
 
       const response = await fetch(
-        `${API_BASE_URL}/api/observacion/docente/${encodeURIComponent(
+        `/api/observacion/docente/${encodeURIComponent(
           teacher.docente,
         )}/pdf`,
       )

@@ -22,7 +22,7 @@ export type LanguageCurrent = {
 export async function fetchLanguageCenter(scope: LanguageScope, signal?: AbortSignal): Promise<LanguageCurrent> {
   const params = new URLSearchParams()
   for (const [key, value] of Object.entries(scope)) if (value) params.set(key, value)
-  const response = await fetch(`http://127.0.0.1:8000/api/encuesta-calidad/centro-idiomas/actual?${params}`, { signal })
+  const response = await fetch(`/api/encuesta-calidad/centro-idiomas/actual?${params}`, { signal })
   if (!response.ok) {
     const body = await response.json().catch(() => null)
     throw new Error(typeof body?.detail === "string" ? body.detail : "No fue posible cargar Centro de Idiomas")

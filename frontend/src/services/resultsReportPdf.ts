@@ -17,7 +17,7 @@ export async function downloadResultsReportPdf(scope: ResultsReportScope, active
   for (const key of ["periodo", "modalidad", "servicio", "carrera", "modalidad_academica", "idioma", "tipo_curso", "participacion"] as const) {
     if (selection[key]) params.set(key, selection[key])
   }
-  const response = await fetch(`http://127.0.0.1:8000/api/encuesta-calidad/informe-resultados.pdf?${params}`)
+  const response = await fetch(`/api/encuesta-calidad/informe-resultados.pdf?${params}`)
   if (!response.ok) {
     const error = await response.json().catch(() => null)
     throw new Error(error?.detail || "No fue posible generar el informe de resultados.")

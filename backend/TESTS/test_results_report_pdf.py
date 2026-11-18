@@ -116,6 +116,8 @@ class ResultsReportTests(unittest.TestCase):
             from backend.SERVICES.calidad import results_report_source as sources
         sources.clear_snapshots()
         app = FastAPI()
+        from backend.TESTS.auth_fixture import authorize_dg
+        authorize_dg(app)
         app.include_router(api.router)
         def source(year, source, service):
             rows, mapping = (self.now, self.now_map) if year == "2026" else (self.old, self.old_map)
@@ -137,6 +139,8 @@ class ResultsReportTests(unittest.TestCase):
             from backend.SERVICES.calidad import results_report_source as sources
         sources.clear_snapshots()
         app = FastAPI()
+        from backend.TESTS.auth_fixture import authorize_dg
+        authorize_dg(app)
         app.include_router(api.router)
         error = APIError(type("Quota", (), {"json": lambda self: {"error": {"code": 429, "message": "quota"}}})())
         with patch.object(sources, "_fuente", side_effect=error) as source, self.assertLogs(api.logger, level="ERROR") as logs:
@@ -154,6 +158,8 @@ class ResultsReportTests(unittest.TestCase):
             from backend.GATEWAY import results_report_api as api
             from backend.SERVICES.calidad import results_report_source as sources
         app = FastAPI()
+        from backend.TESTS.auth_fixture import authorize_dg
+        authorize_dg(app)
         app.include_router(api.router)
         with patch.object(sources, "_fuente") as source:
             result = TestClient(app).get("/api/encuesta-calidad/informe-resultados.pdf?periodo=2025")

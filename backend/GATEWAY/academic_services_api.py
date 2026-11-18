@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from backend.GATEWAY.quality_access import require_quality
 from backend.GATEWAY.institutional_services_api import _fuente
 from backend.SERVICES.calidad.academic_services import resumen_actual, resumen_historico
 
-router = APIRouter(prefix="/api/encuesta-calidad/servicios-academicos", tags=["Servicios académicos"])
+router = APIRouter(dependencies=[Depends(require_quality)], prefix="/api/encuesta-calidad/servicios-academicos", tags=["Servicios académicos"])
 
 
 @router.get("/actual")

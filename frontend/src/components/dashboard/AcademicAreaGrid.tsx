@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom"
 
 import { AcademicAreaCard } from "@/components/cards/AcademicAreaCard"
+import { useAuth } from "@/auth/session"
 
 const academicAreas = [
   {
@@ -11,6 +12,7 @@ const academicAreas = [
       "Seguimiento del desempeño observado en aula y cumplimiento de criterios institucionales.",
     trend: "+2.1 pts",
     path: "/observacion-clases",
+    module: "observacion_clases",
   },
   {
     title: "Evaluación Docente",
@@ -48,6 +50,8 @@ const academicAreas = [
 
 export function AcademicAreaGrid() {
   const navigate = useNavigate()
+  const { session } = useAuth()
+  const modules = session.status === "authenticated" ? session.user.modulos : []
 
   return (
     <section className="mt-10">
@@ -65,7 +69,7 @@ export function AcademicAreaGrid() {
       </p>
 
       <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-        {academicAreas.map((area) => (
+        {academicAreas.filter((area) => area.module && modules.includes(area.module)).map((area) => (
           <div
             key={area.title}
             onClick={() => {

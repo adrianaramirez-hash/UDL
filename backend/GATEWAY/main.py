@@ -1,5 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from backend.CONFIG.auth import auth_settings
+from backend.GATEWAY.auth_api import router as auth_router
 
 from backend.GATEWAY.observation_api import (
     router as observation_router,
@@ -25,30 +27,35 @@ app = FastAPI(
 
 
 # -------------------------------------------------
-# CORS - Desarrollo local
-# -------------------------------------------------
-# Permite que Vite funcione desde localhost o
-# 127.0.0.1 independientemente del puerto asignado.
+# CORS para el origen configurado de la aplicación
 # -------------------------------------------------
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=(
-        r"^http://(localhost|127\.0\.0\.1):\d+$"
-    ),
+    allow_origins=[auth_settings.public_origin] if auth_settings.public_origin else [],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
     expose_headers=[
         "Content-Disposition",
     ],
 )
 
 
+@app.middleware("http")
+async def prevent_api_caching(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
 # -------------------------------------------------
 # Routers
 # -------------------------------------------------
 
+app.include_router(auth_router)
 app.include_router(
     observation_router
 )

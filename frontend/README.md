@@ -1,5 +1,25 @@
 # React + TypeScript + Vite
 
+## Acceso local
+
+Configura el `.env` de la raíz usando `.env.example`. Registra
+`http://localhost:5173/api/auth/callback` como URI de redirección del cliente
+web de Google y comparte la pestaña `ACCESOS` con la cuenta de servicio del
+backend mediante el spreadsheet que la contiene. Usa el mismo host y puerto
+en el navegador y en `AUTH_PUBLIC_ORIGIN`.
+
+Para el callback anterior, configura `AUTH_PUBLIC_ORIGIN=http://localhost:5173`
+y `AUTH_ALLOW_HTTP_LOCALHOST=1`. Conserva los valores de conexión existentes al
+usar la plantilla. Omite `ACCESOS_CACHE_SECONDS`, `AUTH_SESSION_SECONDS` y
+`AUTH_SESSION_DB` para usar los valores predeterminados.
+
+Desde la raíz inicia `python -m uvicorn backend.GATEWAY.main:app --no-access-log`.
+En `frontend/`, ejecuta `npm run dev`. Vite envía `/api` al backend local.
+Para producción sirve `npm run build` y FastAPI bajo el mismo origen HTTPS,
+registra el callback HTTPS y deshabilita `AUTH_ALLOW_HTTP_LOCALHOST`. Usa un
+directorio privado y persistente para `AUTH_SESSION_DB`, compartido por los
+workers del mismo host. El proxy debe omitir parámetros del callback en logs.
+
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
 Currently, two official plugins are available:

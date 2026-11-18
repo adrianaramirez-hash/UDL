@@ -180,6 +180,8 @@ class SchoolEnvironmentRoutesTests(unittest.TestCase):
             from backend.GATEWAY import school_environment_api as api
         cls.api = api
         app = FastAPI()
+        from backend.TESTS.auth_fixture import authorize_dg
+        authorize_dg(app)
         app.include_router(api.router)
         cls.client = TestClient(app)
 

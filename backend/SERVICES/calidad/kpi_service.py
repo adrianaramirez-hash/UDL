@@ -2,6 +2,8 @@ from collections import defaultdict
 from statistics import mean
 import unicodedata
 from backend.SERVICES.calidad.normalizer import cargar_personas_evaluadas
+from backend.CORE.auth.policy import QUALITY_COMMENTS, QUALITY_EXPORT
+from backend.CORE.auth.quality_scope import population, quality_has, quality_scope
 
 
 def _es_si(valor) -> bool:
@@ -650,6 +652,12 @@ def calcular_kpis_preview(
                 )
             )
 
+    # The institutional catalogs can add populations with no responses. For an
+    # assigned account only populations confirmed by the scoped input may be added.
+    catalog_scope = {population(row) for row in registros} if quality_scope.get() else None
+    if catalog_scope is not None:
+        catalogo_personal = [fila for fila in catalogo_personal if population(fila) in catalog_scope]
+
     def _clave_texto_personal(
         valor,
     ) -> str:
@@ -1033,6 +1041,10 @@ def calcular_kpis_preview(
         )
 
         for carrera_confirmada in carreras_confirmadas:
+            if catalog_scope is not None and population({
+                "CARRERA_BASE": carrera_confirmada, "MODALIDAD_ACADEMICA": modalidad_confirmada,
+            }) not in catalog_scope:
+                continue
             clave = (
                 _clave_personal_ascii(carrera_confirmada),
                 _clave_personal_ascii(modalidad_confirmada),
@@ -2503,7 +2515,7 @@ def calcular_kpis_preview(
 
     comentarios = []
 
-    for registro in registros:
+    for registro in registros if quality_has(QUALITY_COMMENTS) else ():
         tipo_dato = str(
             registro.get(
                 "TIPO_DATO",
@@ -2792,6 +2804,9 @@ def calcular_kpis_preview(
         (carrera, modalidad, persona)
         for carrera, modalidad, persona in catalogo_direccion_institucional
         if _modalidad_catalogo_aplica(modalidad)
+        and (catalog_scope is None or population({
+            "CARRERA_BASE": carrera, "MODALIDAD_ACADEMICA": modalidad,
+        }) in catalog_scope)
     ]
     # Active current catalog populations remain visible even with no answers.
     # Historical responses never participate in constructing this universe.
@@ -3919,7 +3934,7 @@ def calcular_kpis_preview(
 
     respuestas_export = []
 
-    for registro in registros:
+    for registro in registros if quality_has(QUALITY_EXPORT) else ():
         respuesta_original = registro.get(
             "RESPUESTA_ORIGINAL"
         )

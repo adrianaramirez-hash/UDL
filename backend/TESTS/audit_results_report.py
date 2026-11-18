@@ -25,6 +25,8 @@ def audit(source, output, renderer_path):
         from backend.SERVICES.calidad import results_report_source as sources
     sources.clear_snapshots()
     app = FastAPI()
+    from backend.TESTS.auth_fixture import authorize_dg
+    authorize_dg(app)
     app.include_router(api.router)
     out = Path(output)
     out.mkdir(parents=True, exist_ok=True)

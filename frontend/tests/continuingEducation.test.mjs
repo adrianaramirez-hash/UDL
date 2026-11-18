@@ -94,7 +94,7 @@ test("Comentarios no aparecen ni se clasifican globalmente", () => {
 
 test("El cliente envía filtros opcionales y solicita únicamente la fuente actual", async () => {
   const original = globalThis.fetch, urls = []
-  globalThis.fetch = async url => { urls.push(new URL(url)); return { ok: true, json: async () => ({}) } }
+  globalThis.fetch = async url => { urls.push(new URL(url, 'http://localhost')); return { ok: true, json: async () => ({}) } }
   try {
     const scope = { periodo: "2026", modalidad: "Escolarizadas", servicio: "Programa", carrera: "Derecho", modalidad_academica: "Presencial", participacion: "si" }
     await fetchContinuingEducation(scope)

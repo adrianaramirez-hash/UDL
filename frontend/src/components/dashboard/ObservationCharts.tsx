@@ -30,7 +30,6 @@ type ObservationChartsProps = {
   filters: ObservationFilterState
 }
 
-const API_BASE_URL = "http://127.0.0.1:8000"
 
 export function ObservationCharts({
   filters,
@@ -64,7 +63,7 @@ export function ObservationCharts({
         const query = params.toString()
 
         const response = await fetch(
-          `${API_BASE_URL}/api/observacion/tendencia${
+          `/api/observacion/tendencia${
             query ? `?${query}` : ""
           }`,
         )

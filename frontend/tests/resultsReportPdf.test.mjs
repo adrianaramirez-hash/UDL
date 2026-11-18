@@ -10,7 +10,7 @@ function harness(response, labels=[]) {
   const context={module,exports:module.exports,URLSearchParams,Error,
     URL:{createObjectURL(){events.push('blob');return 'blob:report'},revokeObjectURL(){events.push('revoke')}},
     document:{querySelectorAll(){return labels},createElement(tag){assert.equal(tag,'a');return anchor},body:{appendChild(){events.push('append')}}},
-    fetch:async url=>{requests.push(new URL(url));return response},setTimeout(callback){callback()},
+    fetch:async url=>{requests.push(new URL(url, 'http://localhost'));return response},setTimeout(callback){callback()},
   }
   const source=readFileSync(new URL('../src/services/resultsReportPdf.ts',import.meta.url),'utf8')
   vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,context)

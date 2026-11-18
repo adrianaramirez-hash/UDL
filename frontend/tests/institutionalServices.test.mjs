@@ -75,7 +75,7 @@ test("Carga histórica muestra skeleton y conserva resultados actuales", () => {
 test("El cliente envía exactamente carrera, modalidad y programa en ambos años", async () => {
   const original = globalThis.fetch
   const urls = []
-  globalThis.fetch = async url => { urls.push(new URL(url)); return { ok: true, json: async () => ({}) } }
+  globalThis.fetch = async url => { urls.push(new URL(url, 'http://localhost')); return { ok: true, json: async () => ({}) } }
   try {
     const scope = { periodo: "2026", modalidad: "Escolarizadas", servicio: "Licenciatura: Derecho", carrera: "Derecho", modalidad_academica: "Presencial" }
     await fetchInstitutionalServices("actual", scope)

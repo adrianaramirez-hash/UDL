@@ -1,5 +1,7 @@
 """Isolated routes: existing section endpoints and exports remain unchanged."""
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from backend.GATEWAY.quality_access import require_quality
+from backend.CORE.auth.quality_scope import quality_scope
 from backend.GATEWAY.calidad_api import (
     _obtener_base_preview, _CONFIG_MODALIDADES_2025, _CONFIG_MODALIDADES_2026,
     _normalizar_servicio_filtro,
@@ -9,10 +11,10 @@ from backend.FUENTES.calidad.google_sheets import leer_encabezados
 from backend.SERVICES.calidad.normalizer import cargar_mapa_preguntas
 from backend.SERVICES.calidad.institutional_services import resumen_actual, resumen_historico, clave, nombre_desde_encabezado
 
-router = APIRouter(prefix="/api/encuesta-calidad/servicios-institucionales", tags=["Servicios institucionales"])
+router = APIRouter(dependencies=[Depends(require_quality)], prefix="/api/encuesta-calidad/servicios-institucionales", tags=["Servicios institucionales"])
 
 
-def _fuente(periodo, modalidad, servicio):
+def _fuente_base(periodo, modalidad, servicio):
     configs = {"2025": _CONFIG_MODALIDADES_2025, "2026": _CONFIG_MODALIDADES_2026}
     if periodo not in configs or modalidad not in configs[periodo]:
         raise HTTPException(status_code=400, detail="Periodo o modalidad no soportados")
@@ -22,6 +24,12 @@ def _fuente(periodo, modalidad, servicio):
     if servicio:
         registros = [row for row in registros if clave(_normalizar_servicio_filtro(row.get("SERVICIO_PROGRAMA"))) == clave(_normalizar_servicio_filtro(servicio))]
     return registros, mapa
+
+
+def _fuente(periodo, modalidad, servicio):
+    scope = quality_scope.get()
+    registros, mapa = _fuente_base(periodo, modalidad, "" if scope else servicio)
+    return (scope.select(registros) if scope else registros), mapa
 
 
 @router.get("/actual")

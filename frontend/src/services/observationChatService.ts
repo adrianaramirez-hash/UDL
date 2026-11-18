@@ -1,4 +1,3 @@
-const API_BASE_URL = "http://127.0.0.1:8000"
 
 export type ObservationChatContext = {
   ultimo_docente?: string
@@ -23,7 +22,7 @@ export async function askObservationAdvisor(
   contexto: ObservationChatContext = {},
 ): Promise<ObservationChatResponse> {
   const response = await fetch(
-    `${API_BASE_URL}/api/observacion/chat`,
+    `/api/observacion/chat`,
     {
       method: "POST",
       headers: {

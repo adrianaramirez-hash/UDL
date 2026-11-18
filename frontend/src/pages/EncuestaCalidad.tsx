@@ -1,5 +1,6 @@
 import { downloadResultsReportPdf } from "@/services/resultsReportPdf"
 import { useEffect, useState } from "react"
+import { useAuth } from "@/auth/session"
 import "@/components/calidad/qualityPresentation.css"
 import { GlobalSectionSummary, MetricComparison, MetricChange, MetricCard, MetricSkeleton, MetricState } from "@/components/common/CalidadMetrics"
 import {
@@ -72,16 +73,6 @@ type DirectionComparisonsExtended = CalidadSummary["comparativos_direccion"] & {
 
 type CalidadSummaryWithExport = CalidadSummary & {
   respuestas_export?: Array<Record<string, unknown>>
-}
-
-type QualitativeSummaryItem = {
-  seccion_id: string
-  seccion_nombre: string
-  total: number
-  positivos: number
-  oportunidades: number
-  incidencias: number
-  sin_clasificar: number
 }
 
 const INSTITUTIONAL_SERVICE_TOPIC_RULES: Array<{
@@ -487,6 +478,11 @@ function QuestionResultCard({
 }
 
 export default function EncuestaCalidad() {
+  const { session } = useAuth()
+  const access = session.status === "authenticated" ? session.user : null
+  const assigned = access?.alcance.tipo === "asignado"
+  const canDownload = access?.permisos.includes("encuesta_calidad.descargar_pdf")
+  const canExport = access?.permisos.includes("encuesta_calidad.exportar_respuestas")
   const [summary, setSummary] = useState<CalidadSummary | null>(null)
 
   const [historico2025, setHistorico2025] =
@@ -502,16 +498,6 @@ export default function EncuestaCalidad() {
 
   const [selectedSectionId, setSelectedSectionId] =
     useState("")
-
-  const [
-    selectedSectionCareer,
-    setSelectedSectionCareer,
-  ] = useState("")
-
-  const [
-    selectedSectionModality,
-    setSelectedSectionModality,
-  ] = useState("")
 
   const [staffDrawerOpen, setStaffDrawerOpen] =
     useState(false)
@@ -626,7 +612,7 @@ export default function EncuestaCalidad() {
           params.set("servicio", filters.servicio)
         }
 
-        return `http://127.0.0.1:8000/api/encuesta-calidad/preview/resumen?${params.toString()}`
+        return `/api/encuesta-calidad/preview/resumen?${params.toString()}`
       }
 
       const request = async () => {
@@ -682,10 +668,6 @@ export default function EncuestaCalidad() {
       id: "comparativos",
       label: "Comparativos",
     },
-    {
-      id: "comentarios",
-      label: "Preguntas abiertas",
-    },
   ]
 
   const availableSections =
@@ -714,71 +696,6 @@ export default function EncuestaCalidad() {
       (question) =>
         canonicalSectionId(question.seccion_id) === effectiveSectionId,
     ) ?? []
-
-  const sectionCareerModalities =
-    (
-      summary?.comparativos_secciones
-        ?.por_carrera_modalidad.filter(
-          (item) =>
-            canonicalSectionId(item.seccion_id) ===
-              effectiveSectionId &&
-            item.indice !== null,
-        ) ?? []
-    ).sort((a, b) => {
-      const diferencia =
-        (b.indice ?? -1) -
-        (a.indice ?? -1)
-
-      if (diferencia !== 0) {
-        return diferencia
-      }
-
-      const carrera =
-        a.carrera_base.localeCompare(
-          b.carrera_base,
-          "es",
-        )
-
-      if (carrera !== 0) {
-        return carrera
-      }
-
-      return a.modalidad_academica.localeCompare(
-        b.modalidad_academica,
-        "es",
-      )
-    })
-
-  const selectedSectionPopulation =
-    sectionCareerModalities.find(
-      (item) =>
-        item.carrera_base ===
-          selectedSectionCareer &&
-        item.modalidad_academica ===
-          selectedSectionModality,
-    ) ??
-    sectionCareerModalities[0] ??
-    null
-
-  const effectiveSectionCareer =
-    selectedSectionPopulation?.carrera_base ??
-    ""
-
-  const effectiveSectionModality =
-    selectedSectionPopulation
-      ?.modalidad_academica ?? ""
-
-  const selectedSectionCareerQuestions =
-    summary?.comparativos_secciones
-      ?.preguntas_por_carrera_modalidad.filter(
-        (item) =>
-          item.seccion_id ===
-            effectiveSectionId &&
-          item.carrera_base ===
-            effectiveSectionCareer &&
-          item.modalidad_academica ===
-            effectiveSectionModality,
-      ) ?? []
 
   const selectedSectionPeople = Array.from(new Map([
     ...(summary?.comparativos_personal?.asignaciones ?? []).map(item => ({
@@ -1265,14 +1182,14 @@ export default function EncuestaCalidad() {
             {summary && (
               <div className="text-right text-sm text-muted-foreground">
                 <p>Periodo {summary.filtros.seleccion.periodo}</p>
-                <p>
+                {!assigned && <p>
                   Filas {summary.fila_inicio}–{summary.fila_fin}
-                </p>
+                </p>}
               </div>
             )}
           </div>
 
-          {summary && (
+          {(summary || assigned) && (
             <div className="mt-8 rounded-2xl border bg-card p-5 shadow-sm">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-end">
                 <div className="min-w-[180px] flex-1">
@@ -1292,7 +1209,7 @@ export default function EncuestaCalidad() {
                     }
                     className="w-full rounded-xl border bg-background px-4 py-2.5 text-sm outline-none transition focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
                   >
-                    {summary.filtros.periodos.map((periodo) => (
+                    {(summary?.filtros.periodos ?? ["2025", "2026"]).map((periodo) => (
                       <option key={periodo} value={periodo}>
                         {periodo}
                       </option>
@@ -1316,7 +1233,7 @@ export default function EncuestaCalidad() {
                     }
                     className="w-full rounded-xl border bg-background px-4 py-2.5 text-sm outline-none transition focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
                   >
-                    {summary.filtros.modalidades.map((modalidad) => (
+                    {(assigned ? ["Escolarizadas", "Virtuales", "Prepa"] : summary?.filtros.modalidades ?? []).map((modalidad) => (
                       <option key={modalidad} value={modalidad}>
                         {modalidad}
                       </option>
@@ -1344,14 +1261,14 @@ export default function EncuestaCalidad() {
                     className="w-full rounded-xl border bg-background px-4 py-2.5 text-sm outline-none transition focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
                   >
                     <option value="">
-                      {filters.modalidad === "Prepa"
+                      {assigned ? "Mis servicios asignados" : filters.modalidad === "Prepa"
                         ? "Todos los grados"
                         : filters.modalidad === "Virtuales"
                           ? "Todos los programas"
                           : "Todos los servicios"}
                     </option>
 
-                    {summary.filtros.servicios.map((servicio) => (
+                    {(summary?.filtros.servicios ?? []).map((servicio) => (
                       <option key={servicio} value={servicio}>
                         {servicio}
                       </option>
@@ -1374,7 +1291,7 @@ export default function EncuestaCalidad() {
                 </button>
 
               <div className="ml-auto flex flex-wrap gap-2">
-                <button
+                {canDownload && summary && (!assigned || (filters.periodo === "2026" && filters.modalidad === "Escolarizadas")) && <button
                   type="button"
                   onClick={() =>
                     downloadQualityReportPdf(
@@ -1387,9 +1304,9 @@ export default function EncuestaCalidad() {
                   className="rounded-xl border bg-background px-5 py-2.5 text-sm font-medium transition hover:bg-muted"
                 >
                   Descargar informe
-                </button>
+                </button>}
 
-                <button
+                {canExport && summary && <button
                   type="button"
                   onClick={() =>
                     downloadResponsesCsv(
@@ -1400,7 +1317,7 @@ export default function EncuestaCalidad() {
                   className="rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition hover:opacity-95"
                 >
                   Descargar respuestas
-                </button>
+                </button>}
               </div>
               </div>
             </div>
@@ -2464,7 +2381,7 @@ export default function EncuestaCalidad() {
                   {effectiveSectionId === "ESC_02_DIRECCION" && (
                     <div className="space-y-6">
                       <DirectionGlobal current={summary} historical={directionHistory.data} year={filters.periodo || "2026"}
-                        loading={directionHistory.loading} error={directionHistory.error} filtered={Boolean(filters.servicio)} />
+                        loading={directionHistory.loading} error={directionHistory.error} filtered={Boolean(filters.servicio)} assigned={assigned} />
 
                       <div className="rounded-2xl border bg-card p-6 shadow-sm">
                         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
@@ -2504,7 +2421,7 @@ export default function EncuestaCalidad() {
                       </div>
 
                       {directionView === "carrera" && (
-                        <DirectionCareerList current={summary} historical={directionHistory.data} year={filters.periodo || "2026"}
+                        <DirectionCareerList current={summary} historical={directionHistory.data} year={filters.periodo || "2026"} assigned={assigned}
                           loading={directionHistory.loading} error={directionHistory.error}
                           onSelect={population => {
                             setSelectedDirectionCareer(population.carrera_base)
@@ -3038,16 +2955,6 @@ export default function EncuestaCalidad() {
     )}
   </div>
 )}
-
-          {summary && !loading && activeTab === "comentarios" && (
-            <div className="mt-8 rounded-xl border bg-card p-4 text-sm text-muted-foreground">
-              <p>
-                Consulta los comentarios en el detalle de cada responsable,
-                carrera, servicio, criterio o indicador bajo los filtros activos.
-              </p>
-            </div>
-          )}
-
 
         </div>
       </main>

@@ -1,4 +1,6 @@
 ﻿from backend.CONFIG.settings import settings
+from functools import cached_property
+
 from backend.FUENTES.calidad.google_sheets import (
     abrir_spreadsheet,
     crear_cliente_google_sheets,
@@ -10,10 +12,10 @@ class CalidadRepository:
     Acceso a los datos de control de Encuesta de Calidad.
     """
 
-    def __init__(self):
-        self.client = crear_cliente_google_sheets()
-        self.master = abrir_spreadsheet(
-            self.client,
+    @cached_property
+    def master(self):
+        return abrir_spreadsheet(
+            crear_cliente_google_sheets(),
             settings.calidad_master_sheet_id,
         )
 

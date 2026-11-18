@@ -22,6 +22,16 @@ export type CalidadQuestion = {
   entra_general: boolean
 }
 
+export type CalidadSection = {
+  seccion_id: string
+  seccion_nombre: string
+  indice: number | null
+  preguntas_con_datos: number
+  preguntas_formulario_total: number
+  reactivos_indice_total: number
+  entra_general: boolean
+}
+
 export type CalidadSectionCareerModality = {
   seccion_id: string
   seccion_nombre: string
@@ -284,7 +294,6 @@ export type CalidadSummary = {
   filtros: CalidadFilters
 }
 
-const API_BASE_URL = "http://127.0.0.1:8000"
 
 export async function getCalidadSummary(
   filtros: CalidadFilterSelection = {},
@@ -311,8 +320,8 @@ export async function getCalidadSummary(
   const query = params.toString()
 
   const url = query
-    ? `${API_BASE_URL}/api/encuesta-calidad/preview/resumen?${query}`
-    : `${API_BASE_URL}/api/encuesta-calidad/preview/resumen`
+    ? `/api/encuesta-calidad/preview/resumen?${query}`
+    : `/api/encuesta-calidad/preview/resumen`
 
   const response = await fetch(url, { signal })
 

@@ -8,7 +8,7 @@ from uuid import uuid4
 from backend.FUENTES.calidad.read_snapshot import ReadSnapshot, reading
 from backend.FUENTES.calidad.google_sheets import leer_encabezados
 from backend.GATEWAY import calidad_api
-from backend.GATEWAY.institutional_services_api import _fuente
+from backend.GATEWAY.institutional_services_api import _fuente_base as _fuente
 from backend.SERVICES.calidad.institutional_services import clave, nombre_desde_encabezado
 from backend.SERVICES.calidad.normalizer import cargar_personas_evaluadas
 

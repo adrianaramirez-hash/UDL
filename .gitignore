@@ -10,6 +10,8 @@ credentials/
 .env
 .env.*
 debug_secrets.py
+.runtime/
+!.env.example
 
 # Frontend
 node_modules/

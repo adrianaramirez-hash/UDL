@@ -33,21 +33,22 @@ export function DirectionCriteria({ current, historical, population, year, loadi
   />)}</div>
 }
 
-export function DirectionGlobal({ current, historical, year, loading, error, filtered }: {
-  current: DirectionData; historical: DirectionData | null; year: string; loading: boolean; error: boolean; filtered: boolean;
+export function DirectionGlobal({ current, historical, year, loading, error, filtered, assigned = false }: {
+  current: DirectionData; historical: DirectionData | null; year: string; loading: boolean; error: boolean; filtered: boolean; assigned?: boolean;
 }) {
   const questions = criteriaFor(current)
   const section = current.secciones.find(row => criterionId(row.seccion_id) === "ESC_02_DIRECCION")
   const previous = year === "2026" ? historical?.secciones.find(row => criterionId(row.seccion_id) === "ESC_02_DIRECCION")?.indice ?? null : null
   return <GlobalSectionSummary title="Dirección de carrera">
-    {filtered && <p className="text-sm text-muted-foreground">Vista global dentro del programa seleccionado en los filtros superiores.</p>}
+    {assigned ? <p className="text-sm text-muted-foreground">Resultados de los servicios asignados.</p>
+      : filtered && <p className="text-sm text-muted-foreground">Vista global dentro del programa seleccionado en los filtros superiores.</p>}
     <MetricCard title="Resultado general de Dirección" current={section?.indice ?? null} previous={previous} responses={questions.reduce((sum, row) => sum + row.n, 0)} currentYear={year} loading={loading && year === "2026"} comparisonError={error && year === "2026"} />
     <DirectionCriteria current={current} historical={historical} year={year} loading={loading} error={error} />
   </GlobalSectionSummary>
 }
 
-export function DirectionCareerList({ current, historical, year, onSelect, loading = false, error = false }: {
-  current: DirectionData; historical: DirectionData | null; year: string; onSelect: (population: DirectionPopulation) => void; loading?: boolean; error?: boolean;
+export function DirectionCareerList({ current, historical, year, onSelect, loading = false, error = false, assigned = false }: {
+  current: DirectionData; historical: DirectionData | null; year: string; onSelect: (population: DirectionPopulation) => void; loading?: boolean; error?: boolean; assigned?: boolean;
 }) {
   const [career, setCareer] = useState("")
   const [modality, setModality] = useState("")
@@ -58,11 +59,15 @@ export function DirectionCareerList({ current, historical, year, onSelect, loadi
   const selectedCareer = careers.includes(career) ? career : ""
   const selectedModality = modalities.includes(modality) ? modality : ""
   const visible = populations.filter(row => (!selectedCareer || row.carrera_base === selectedCareer) && (!selectedModality || row.modalidad_academica === selectedModality))
+  const allLabel = assigned ? "Toda mi asignación" : "Todas / Vista global"
   return <section aria-label="Carreras de Dirección" className="space-y-5 rounded-2xl border bg-card p-6 shadow-sm">
-    <div><h3 className="font-semibold">Desglose opcional por carrera y modalidad</h3><p className="mt-1 text-sm text-muted-foreground">Todas las carreras del catálogo actual, incluidas las que aún no tienen respuestas de Dirección.</p><p className="mt-1 text-xs text-muted-foreground">Estos filtros acotan el listado. El resumen superior conserva su alcance global; abre una población para consultar su resultado.</p></div>
+    <div><h3 className="font-semibold">Desglose opcional por carrera y modalidad</h3>
+      {assigned ? <p className="mt-1 text-sm text-muted-foreground">Abre una población asignada para consultar su resultado.</p>
+        : <><p className="mt-1 text-sm text-muted-foreground">Todas las carreras del catálogo actual, incluidas las que aún no tienen respuestas de Dirección.</p><p className="mt-1 text-xs text-muted-foreground">Estos filtros acotan el listado. El resumen superior conserva su alcance global; abre una población para consultar su resultado.</p></>}
+    </div>
     <div className="flex flex-wrap gap-4">
-      <label className="space-y-1 text-sm">Carrera / programa<select className="block rounded-lg border bg-background p-2" value={selectedCareer} onChange={event => setCareer(event.target.value)}><option value="">Todas / Vista global</option>{careers.map(name => <option key={name}>{name}</option>)}</select></label>
-      <label className="space-y-1 text-sm">Modalidad<select className="block rounded-lg border bg-background p-2" value={selectedModality} onChange={event => setModality(event.target.value)}><option value="">Todas / Vista global</option>{modalities.map(name => <option key={name}>{name}</option>)}</select></label>
+      <label className="space-y-1 text-sm">Carrera / programa<select className="block rounded-lg border bg-background p-2" value={selectedCareer} onChange={event => setCareer(event.target.value)}><option value="">{allLabel}</option>{careers.map(name => <option key={name}>{name}</option>)}</select></label>
+      <label className="space-y-1 text-sm">Modalidad<select className="block rounded-lg border bg-background p-2" value={selectedModality} onChange={event => setModality(event.target.value)}><option value="">{allLabel}</option>{modalities.map(name => <option key={name}>{name}</option>)}</select></label>
     </div>
     <p className="text-xs text-muted-foreground">{visible.length} poblaciones · {new Set(visible.map(row => row.carrera_base)).size} carreras / programas</p>
     <div className="grid max-h-[520px] gap-3 overflow-y-auto pr-2 lg:grid-cols-2">{visible.map(row => {

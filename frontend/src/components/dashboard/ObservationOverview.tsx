@@ -26,7 +26,6 @@ const DEFAULT_FILTERS: ObservationFilterOptions = {
   tipos: [],
 }
 
-const API_BASE_URL = "http://127.0.0.1:8000"
 
 export function ObservationOverview({
   filters,
@@ -128,7 +127,7 @@ export function ObservationOverview({
       const query = params.toString()
 
       const response = await fetch(
-        `${API_BASE_URL}/api/observacion/reporte-ejecutivo/pdf${
+        `/api/observacion/reporte-ejecutivo/pdf${
           query ? `?${query}` : ""
         }`,
       )
